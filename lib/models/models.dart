@@ -62,15 +62,25 @@ enum OrderSource {
   Color get badgeColor {
     switch (this) {
       case OrderSource.diretto:
-        return const Color(0xFFB84221);
+        return const Color(0xFFE53935);
       case OrderSource.justEat:
-        return const Color(0xFFE65100);
+        return const Color(0xFFFF6D00);
       case OrderSource.glovo:
-        return const Color(0xFFC88A00);
+        return const Color(0xFFFFD60A);
       case OrderSource.deliveroo:
-        return const Color(0xFF00897B);
+        return const Color(0xFF00BFA5);
       case OrderSource.banco:
-        return const Color(0xFF6D4C41);
+        return const Color(0xFF455A64);
+    }
+  }
+
+  Color get badgeTextColor {
+    switch (this) {
+      case OrderSource.glovo:
+      case OrderSource.deliveroo:
+        return Colors.black;
+      default:
+        return Colors.white;
     }
   }
 }
@@ -92,15 +102,19 @@ enum DeliveryType {
 }
 
 enum OrderStatus {
-  nuovoOrdine('nuovo_ordine', 'Nuovo ordine', Color(0xFFD84315)),
-  pronto('pronto', 'Pronto', Color(0xFF2E7D32)),
-  inConsegna('in_consegna', 'In consegna', Color(0xFF1565C0)),
-  completato('completato', 'Completato', Color(0xFF5D4037));
+  // Da iniziare -> Rosso
+  nuovoOrdine('nuovo_ordine', 'Nuovo ordine', Color(0xFFE53935), Colors.white),
+  // Da completare -> Giallo
+  pronto('pronto', 'Pronto', Color(0xFFFFD60A), Colors.black),
+  inConsegna('in_consegna', 'In consegna', Color(0xFFFFD60A), Colors.black),
+  // Completati -> Verde
+  completato('completato', 'Completato', Color(0xFF00E676), Colors.black);
 
   final String dbValue;
   final String label;
   final Color color;
-  const OrderStatus(this.dbValue, this.label, this.color);
+  final Color textColor;
+  const OrderStatus(this.dbValue, this.label, this.color, this.textColor);
 
   static OrderStatus fromDb(String value) {
     return OrderStatus.values.firstWhere(

@@ -122,12 +122,12 @@ class _RiderScreenState extends State<RiderScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
-              // Riepilogo Compenso Personale + Cassa Consegne
+              // Riepilogo Compenso Personale + Cassa Consegne (Conti soldi in verde)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AppTheme.warmSurface,
+                  color: AppTheme.surfaceDark,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: AppTheme.cardBorder, width: 1.5),
                 ),
@@ -144,20 +144,23 @@ class _RiderScreenState extends State<RiderScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
-                                color: AppTheme.textMutedBrown,
+                                color: AppTheme.textMuted,
                               ),
                             ),
                             Text(
                               '€ ${todayEarnings.toStringAsFixed(2)}',
                               style: const TextStyle(
-                                fontSize: 28,
+                                fontSize: 30,
                                 fontWeight: FontWeight.w900,
-                                color: AppTheme.terracottaPrimary,
+                                color: AppTheme.moneyGreen,
                               ),
                             ),
                             Text(
                               'Turno: € ${baseQuota.toStringAsFixed(0)} + ${myCompletedOrders.length} cons. (€ ${myCompletedOrders.length * 2})',
-                              style: const TextStyle(fontSize: 12),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textMuted,
+                              ),
                             ),
                           ],
                         ),
@@ -165,12 +168,12 @@ class _RiderScreenState extends State<RiderScreen> {
                           _shiftRegisteredToday
                               ? const Chip(
                             avatar: Icon(Icons.check_circle,
-                                color: Colors.white, size: 18),
+                                color: Colors.black, size: 18),
                             label: Text('Turno attivo'),
-                            backgroundColor: AppTheme.paidGreen,
+                            backgroundColor: AppTheme.moneyGreen,
                             labelStyle: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                              fontWeight: FontWeight.w900,
                             ),
                           )
                               : ElevatedButton(
@@ -191,15 +194,15 @@ class _RiderScreenState extends State<RiderScreen> {
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
-                                  color: AppTheme.textMutedBrown,
+                                  color: AppTheme.textMuted,
                                 ),
                               ),
                               Text(
                                 '€ ${collectedFromDeliveries.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  fontSize: 17,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w900,
-                                  color: AppTheme.paidGreen,
+                                  color: AppTheme.moneyGreen,
                                 ),
                               ),
                             ],
@@ -214,15 +217,15 @@ class _RiderScreenState extends State<RiderScreen> {
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
-                                  color: AppTheme.textMutedBrown,
+                                  color: AppTheme.textMuted,
                                 ),
                               ),
                               Text(
                                 '€ ${stillToCollect.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  fontSize: 17,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w900,
-                                  color: AppTheme.ovenOrangeAccent,
+                                  color: AppTheme.toCompleteYellow,
                                 ),
                               ),
                             ],
@@ -234,20 +237,20 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ),
 
-              // SEZIONE 1: Consegne prese in carico da me in questo momento
+              // SEZIONE 1: Consegne prese in carico da me in questo momento (Giallo: da completare)
               if (myActiveOrders.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Row(
                   children: [
                     const Icon(Icons.delivery_dining,
-                        size: 20, color: AppTheme.terracottaPrimary),
+                        size: 20, color: AppTheme.toCompleteYellow),
                     const SizedBox(width: 6),
                     Text(
                       'LE TUE CONSEGNE IN CORSO (${myActiveOrders.length})',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
-                        color: AppTheme.terracottaPrimary,
+                        color: AppTheme.toCompleteYellow,
                       ),
                     ),
                   ],
@@ -263,12 +266,12 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ],
 
-              // SEZIONE 2: Panoramica completa delle consegne da fare oggi (Nuovo ordine + Pronto)
+              // SEZIONE 2: Panoramica completa delle consegne da fare oggi
               const SizedBox(height: 16),
               Row(
                 children: [
                   const Icon(Icons.list_alt,
-                      size: 20, color: AppTheme.brickBrownDark),
+                      size: 20, color: AppTheme.textWhite),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -276,7 +279,7 @@ class _RiderScreenState extends State<RiderScreen> {
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
-                        color: AppTheme.brickBrownDark,
+                        color: AppTheme.textWhite,
                       ),
                     ),
                   ),
@@ -285,13 +288,13 @@ class _RiderScreenState extends State<RiderScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: AppTheme.paidGreen,
+                        color: AppTheme.toCompleteYellow,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         '$readyCount PRONTE',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: Colors.black,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                         ),
@@ -304,7 +307,7 @@ class _RiderScreenState extends State<RiderScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 22),
                   decoration: BoxDecoration(
-                    color: AppTheme.warmSurface,
+                    color: AppTheme.surfaceDark,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppTheme.cardBorder),
                   ),
@@ -313,7 +316,7 @@ class _RiderScreenState extends State<RiderScreen> {
                       'Nessuna consegna in programma al momento.',
                       style: TextStyle(
                         fontSize: 14,
-                        color: AppTheme.textMutedBrown,
+                        color: AppTheme.textMuted,
                       ),
                     ),
                   ),
@@ -328,7 +331,7 @@ class _RiderScreenState extends State<RiderScreen> {
                   ),
                 ),
 
-              // SEZIONE 3: Consegne completate oggi
+              // SEZIONE 3: Consegne completate oggi (Verde)
               if (myCompletedOrders.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 Text(
@@ -336,7 +339,7 @@ class _RiderScreenState extends State<RiderScreen> {
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w900,
-                    color: AppTheme.textMutedBrown,
+                    color: AppTheme.completedGreen,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -419,6 +422,10 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
             child: const Text('Annulla'),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.toCompleteYellow,
+              foregroundColor: Colors.black,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Rilascia'),
           ),
@@ -454,7 +461,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
-                    color: AppTheme.paidGreen,
+                    color: AppTheme.moneyGreen,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -486,7 +493,8 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
               ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.paidGreen,
+                  backgroundColor: AppTheme.moneyGreen,
+                  foregroundColor: Colors.black,
                 ),
                 onPressed: () => Navigator.pop(ctx, true),
                 icon: const Icon(Icons.check_circle),
@@ -526,19 +534,17 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
     final isReadyToClaim =
         widget.isUnassignedOverview && order.status == OrderStatus.pronto;
 
+    final borderColor = order.isDelayed
+        ? AppTheme.toStartRed
+        : order.status.color.withOpacity(0.85);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
-          color: order.isDelayed
-              ? AppTheme.delayAlertRed
-              : (isReadyToClaim
-              ? AppTheme.paidGreen
-              : (isCompleted
-              ? AppTheme.paidGreen.withOpacity(0.5)
-              : AppTheme.cardBorder)),
-          width: (order.isDelayed || isReadyToClaim) ? 2.2 : 1.2,
+          color: borderColor,
+          width: (order.isDelayed || isReadyToClaim) ? 2.2 : 1.5,
         ),
       ),
       child: Padding(
@@ -554,8 +560,8 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                     fontSize: 19,
                     fontWeight: FontWeight.w900,
                     color: order.isDelayed
-                        ? AppTheme.delayAlertRed
-                        : AppTheme.brickBrownDark,
+                        ? AppTheme.toStartRed
+                        : AppTheme.textWhite,
                   ),
                 ),
                 const Spacer(),
@@ -568,9 +574,9 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                   ),
                   child: Text(
                     order.status.label.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                    style: TextStyle(
+                      color: order.status.textColor,
+                      fontWeight: FontWeight.w900,
                       fontSize: 12,
                     ),
                   ),
@@ -580,13 +586,17 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
             const SizedBox(height: 10),
             Text(
               order.customerName,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textWhite,
+              ),
             ),
             const SizedBox(height: 4),
             Row(
               children: [
                 const Icon(Icons.location_on,
-                    size: 18, color: AppTheme.terracottaPrimary),
+                    size: 18, color: AppTheme.toCompleteYellow),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -594,6 +604,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
+                      color: AppTheme.textMuted,
                     ),
                   ),
                 ),
@@ -629,7 +640,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                         onPressed: () =>
                             launchUrl(Uri.parse('tel:${order.customerPhone}')),
                         icon: const Icon(Icons.phone,
-                            size: 18, color: AppTheme.paidGreen),
+                            size: 18, color: AppTheme.moneyGreen),
                         label: const Text('CHIAMA'),
                       ),
                     ),
@@ -643,28 +654,36 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3E0),
+                  color: AppTheme.darkYellowTint,
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: AppTheme.toCompleteYellow.withOpacity(0.5)),
                 ),
                 child: Text(
                   'Indicazioni: ${order.notes}',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.brickBrownDark,
+                    color: AppTheme.toCompleteYellow,
                   ),
                 ),
               ),
             ],
             const Divider(height: 18),
 
+            // Box importo (Verde se pagato/incassato, Giallo se da incassare)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: order.isPaid
-                    ? const Color(0xFFE8F5E9)
-                    : const Color(0xFFFFEBEE),
+                    ? AppTheme.darkGreenTint
+                    : AppTheme.darkYellowTint,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: order.isPaid
+                      ? AppTheme.moneyGreen
+                      : AppTheme.toCompleteYellow,
+                ),
               ),
               child: Text(
                 order.isPaid
@@ -676,13 +695,13 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   color: order.isPaid
-                      ? AppTheme.paidGreen
-                      : AppTheme.delayAlertRed,
+                      ? AppTheme.moneyGreen
+                      : AppTheme.toCompleteYellow,
                 ),
               ),
             ),
 
-            // Attivo solo quando lo stato è PRONTO; bloccato quando è NUOVO ORDINE
+            // Attivo solo quando lo stato è PRONTO; bloccato (Rosso) quando è NUOVO ORDINE
             if (widget.isUnassignedOverview) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -691,10 +710,11 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isReadyToClaim
-                        ? AppTheme.terracottaPrimary
-                        : AppTheme.cardBorder,
-                    disabledBackgroundColor: AppTheme.cardBorder,
-                    disabledForegroundColor: AppTheme.textMutedBrown,
+                        ? AppTheme.toCompleteYellow
+                        : AppTheme.surfaceElevated,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: AppTheme.darkRedTint,
+                    disabledForegroundColor: AppTheme.toStartRed,
                   ),
                   onPressed: (!isReadyToClaim || _isBusy) ? null : _takeInCharge,
                   icon: _isBusy
@@ -703,7 +723,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      color: Colors.white,
+                      color: Colors.black,
                     ),
                   )
                       : Icon(
@@ -735,7 +755,8 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                       height: 50,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.paidGreen,
+                          backgroundColor: AppTheme.completedGreen,
+                          foregroundColor: Colors.black,
                         ),
                         onPressed: _isBusy ? null : _completeDelivery,
                         icon: const Icon(Icons.check_circle),

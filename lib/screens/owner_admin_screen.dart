@@ -33,9 +33,9 @@ class _OwnerAdminScreenState extends State<OwnerAdminScreen>
         title: const Text('Area Riservata Titolare'),
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
+          indicatorColor: AppTheme.moneyGreen,
+          labelColor: AppTheme.moneyGreen,
+          unselectedLabelColor: AppTheme.textMuted,
           tabs: const [
             Tab(icon: Icon(Icons.payments_outlined), text: 'Incassi e Rider'),
             Tab(icon: Icon(Icons.restaurant_menu), text: 'Menu e Prezzi'),
@@ -95,7 +95,7 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
         ),
         const SizedBox(height: 16),
 
-        // Riepilogo Incassi del periodo selezionato
+        // Riepilogo Incassi del periodo selezionato (Conti soldi verdi)
         StreamBuilder<List<PizzeriaOrder>>(
           stream: SupabaseService.instance.watchOrders(),
           builder: (context, snapshot) {
@@ -127,7 +127,7 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
-                        color: AppTheme.brickBrownDark,
+                        color: AppTheme.textWhite,
                       ),
                     ),
                     const Divider(),
@@ -138,9 +138,9 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                         Text(
                           '€ ${paidTotal.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 20,
                             fontWeight: FontWeight.w900,
-                            color: AppTheme.paidGreen,
+                            color: AppTheme.moneyGreen,
                           ),
                         ),
                       ],
@@ -153,9 +153,9 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                         Text(
                           '€ ${pendingTotal.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 17,
                             fontWeight: FontWeight.bold,
-                            color: AppTheme.ovenOrangeAccent,
+                            color: AppTheme.toCompleteYellow,
                           ),
                         ),
                       ],
@@ -167,7 +167,10 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                         const Text('Ordini completati:'),
                         Text(
                           '$completedCount su ${periodOrders.length}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.completedGreen,
+                          ),
                         ),
                       ],
                     ),
@@ -178,7 +181,7 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
           },
         ),
 
-        // Compensi Rider 1 e Rider 2
+        // Compensi Rider 1 e Rider 2 (Totali in verde)
         FutureBuilder<List<RiderCompensationSummary>>(
           future: Future.wait([
             SupabaseService.instance.calculateRiderCompensation(
@@ -216,15 +219,15 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: AppTheme.brickBrownDark,
+                                color: AppTheme.textWhite,
                               ),
                             ),
                             Text(
                               '€ ${s.grandTotal.toStringAsFixed(2)}',
                               style: const TextStyle(
-                                fontSize: 24,
+                                fontSize: 25,
                                 fontWeight: FontWeight.w900,
-                                color: AppTheme.terracottaPrimary,
+                                color: AppTheme.moneyGreen,
                               ),
                             ),
                           ],
@@ -232,10 +235,12 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                         const Divider(),
                         Text(
                           'Turni lavorati: ${s.shiftDaysCount} giorni -> € ${s.baseFeesTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(color: AppTheme.textMuted),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Consegne completate (Diretto + Just Eat): ${s.completedDeliveriesCount} -> € ${s.deliveriesBonusTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(color: AppTheme.textMuted),
                         ),
                       ],
                     ),
@@ -288,11 +293,13 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                 SwitchListTile(
                   title: const Text('Prezzo confermato definitivo'),
                   value: confirmed,
+                  activeColor: AppTheme.moneyGreen,
                   onChanged: (v) => setDlgState(() => confirmed = v),
                 ),
                 SwitchListTile(
                   title: const Text('Prodotto disponibile'),
                   value: available,
+                  activeColor: AppTheme.moneyGreen,
                   onChanged: (v) => setDlgState(() => available = v),
                 ),
               ],
@@ -369,11 +376,11 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                       child: ChoiceChip(
                         label: Text(opt.$2),
                         selected: _filter == opt.$1,
-                        selectedColor: AppTheme.terracottaPrimary,
+                        selectedColor: AppTheme.toCompleteYellow,
                         labelStyle: TextStyle(
                           color: _filter == opt.$1
-                              ? Colors.white
-                              : AppTheme.textDarkBrown,
+                              ? Colors.black
+                              : AppTheme.textWhite,
                           fontWeight: FontWeight.bold,
                         ),
                         onSelected: (_) => setState(() => _filter = opt.$1),
@@ -393,6 +400,7 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                       item.name,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
+                        color: AppTheme.textWhite,
                         decoration:
                         item.available ? null : TextDecoration.lineThrough,
                       ),
@@ -401,18 +409,20 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                       'Categoria: ${item.category}${!item.priceConfirmed ? " • DA CONFERMARE" : ""}',
                       style: TextStyle(
                         color: !item.priceConfirmed
-                            ? AppTheme.delayAlertRed
-                            : AppTheme.textMutedBrown,
+                            ? AppTheme.toCompleteYellow
+                            : AppTheme.textMuted,
                       ),
                     ),
                     trailing: Text(
                       item.price != null
                           ? '€ ${item.price!.toStringAsFixed(2)}'
                           : 'Da confermare',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: AppTheme.terracottaPrimary,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: item.price != null
+                            ? AppTheme.moneyGreen
+                            : AppTheme.toCompleteYellow,
                       ),
                     ),
                     onTap: () => _editMenuItemDialog(context, item),
@@ -475,12 +485,19 @@ class _PinManagerTab extends StatelessWidget {
         return Card(
           margin: const EdgeInsets.only(bottom: 10),
           child: ListTile(
-            leading: const Icon(Icons.pin, color: AppTheme.terracottaPrimary),
+            leading:
+            const Icon(Icons.pin, color: AppTheme.toCompleteYellow),
             title: Text(
               role.label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textWhite,
+              ),
             ),
-            subtitle: const Text('PIN protetto con crittografia nel database'),
+            subtitle: const Text(
+              'PIN protetto con crittografia nel database',
+              style: TextStyle(color: AppTheme.textMuted),
+            ),
             trailing: OutlinedButton(
               onPressed: () => _changePinDialog(context, role),
               child: const Text('Cambia PIN'),

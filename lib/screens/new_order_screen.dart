@@ -194,7 +194,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppTheme.backgroundWhite,
+      backgroundColor: AppTheme.surfaceDark,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -220,7 +220,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.brickBrownDark,
+                          color: AppTheme.textWhite,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -249,9 +249,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                       Text(
                         'Prezzo: € ${currentPrice.toStringAsFixed(2)} (${selected.length}/${isMezza ? 2 : 4} gusti)',
                         style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.terracottaPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.moneyGreen,
                         ),
                       ),
                       const Divider(),
@@ -263,7 +263,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                               'GUSTI SEMPLICI',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: AppTheme.brickBrownDark,
+                                color: AppTheme.toCompleteYellow,
                               ),
                             ),
                             const SizedBox(height: 6),
@@ -275,11 +275,13 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                 return FilterChip(
                                   label: Text(flavor.name),
                                   selected: isSel,
-                                  selectedColor: AppTheme.terracottaPrimary,
+                                  selectedColor: AppTheme.toCompleteYellow,
+                                  checkmarkColor: Colors.black,
                                   labelStyle: TextStyle(
                                     color: isSel
-                                        ? Colors.white
-                                        : AppTheme.textDarkBrown,
+                                        ? Colors.black
+                                        : AppTheme.textWhite,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                   onSelected: (v) {
                                     setModalState(() {
@@ -301,7 +303,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                               'GUSTI SPECIALI',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: AppTheme.brickBrownDark,
+                                color: AppTheme.toCompleteYellow,
                               ),
                             ),
                             const SizedBox(height: 6),
@@ -313,11 +315,13 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                 return FilterChip(
                                   label: Text(flavor.name),
                                   selected: isSel,
-                                  selectedColor: AppTheme.ovenOrangeAccent,
+                                  selectedColor: AppTheme.toCompleteYellow,
+                                  checkmarkColor: Colors.black,
                                   labelStyle: TextStyle(
                                     color: isSel
-                                        ? Colors.white
-                                        : AppTheme.textDarkBrown,
+                                        ? Colors.black
+                                        : AppTheme.textWhite,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                   onSelected: (v) {
                                     setModalState(() {
@@ -406,15 +410,16 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF3E0),
+                        color: AppTheme.darkYellowTint,
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.toCompleteYellow),
                       ),
                       child: const Text(
                         'Prezzo da confermare a listino. Inserisci l\'importo:',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.brickBrownDark,
+                          color: AppTheme.toCompleteYellow,
                         ),
                       ),
                     ),
@@ -531,7 +536,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   void _openCartSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundWhite,
+      backgroundColor: AppTheme.surfaceDark,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -551,15 +556,15 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: AppTheme.brickBrownDark,
+                        color: AppTheme.textWhite,
                       ),
                     ),
                     Text(
                       '€ ${_cartTotal.toStringAsFixed(2)}',
                       style: const TextStyle(
-                        fontSize: 20,
+                        fontSize: 21,
                         fontWeight: FontWeight.w900,
-                        color: AppTheme.terracottaPrimary,
+                        color: AppTheme.moneyGreen,
                       ),
                     ),
                   ],
@@ -597,11 +602,13 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                               Text(
                                 '€ ${item.subtotal.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.moneyGreen,
+                                ),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.delete_outline,
-                                    color: AppTheme.delayAlertRed),
+                                    color: AppTheme.toStartRed),
                                 onPressed: () {
                                   setState(() => _cart.removeAt(idx));
                                   setSheetState(() {});
@@ -690,7 +697,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
       bottomNavigationBar: Container(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
         decoration: const BoxDecoration(
-          color: AppTheme.warmSurface,
+          color: AppTheme.surfaceDark,
           border: Border(top: BorderSide(color: AppTheme.cardBorder, width: 1.5)),
         ),
         child: SafeArea(
@@ -704,14 +711,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: AppTheme.backgroundWhite,
+                    color: AppTheme.backgroundBlack,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.cardBorder),
+                    border: Border.all(color: AppTheme.moneyGreen),
                   ),
                   child: Row(
                     children: [
                       const Icon(Icons.shopping_bag_outlined,
-                          color: AppTheme.terracottaPrimary),
+                          color: AppTheme.moneyGreen),
                       const SizedBox(width: 6),
                       Column(
                         mainAxisSize: MainAxisSize.min,
@@ -721,16 +728,16 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                             '$_cartItemsCount pz • Vedi',
                             style: const TextStyle(
                               fontSize: 11,
-                              color: AppTheme.textMutedBrown,
+                              color: AppTheme.textMuted,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
                             '€ ${_cartTotal.toStringAsFixed(2)}',
                             style: const TextStyle(
-                              fontSize: 17,
+                              fontSize: 18,
                               fontWeight: FontWeight.w900,
-                              color: AppTheme.brickBrownDark,
+                              color: AppTheme.moneyGreen,
                             ),
                           ),
                         ],
@@ -751,7 +758,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        color: Colors.white,
+                        color: Colors.black,
                       ),
                     )
                         : const Icon(Icons.check_circle_outline),
@@ -796,7 +803,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
-                  color: AppTheme.brickBrownDark,
+                  color: AppTheme.toCompleteYellow,
                 ),
               ),
               const SizedBox(height: 8),
@@ -810,7 +817,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     selected: sel,
                     selectedColor: s.badgeColor,
                     labelStyle: TextStyle(
-                      color: sel ? Colors.white : AppTheme.textDarkBrown,
+                      color: sel ? s.badgeTextColor : AppTheme.textWhite,
                       fontWeight: FontWeight.bold,
                     ),
                     onSelected: (_) => _onSourceChanged(s),
@@ -846,7 +853,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
-                  color: AppTheme.brickBrownDark,
+                  color: AppTheme.toCompleteYellow,
                 ),
               ),
               const SizedBox(height: 8),
@@ -856,13 +863,13 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   children: [
                     ActionChip(
                       avatar: const Icon(Icons.access_time,
-                          size: 16, color: Colors.white),
+                          size: 16, color: Colors.black),
                       label: Text(
                         '$formattedDate • $formattedTime',
                         style: const TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold),
+                            color: Colors.black, fontWeight: FontWeight.w900),
                       ),
-                      backgroundColor: AppTheme.brickBrownDark,
+                      backgroundColor: AppTheme.toCompleteYellow,
                       onPressed: _pickScheduledDateTime,
                     ),
                     const SizedBox(width: 6),
@@ -918,7 +925,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
-                  color: AppTheme.brickBrownDark,
+                  color: AppTheme.toCompleteYellow,
                 ),
               ),
               const SizedBox(height: 8),
@@ -926,7 +933,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.ovenOrangeAccent,
+                    backgroundColor: AppTheme.toCompleteYellow,
+                    foregroundColor: Colors.black,
                   ),
                   onPressed:
                   menu.isEmpty ? null : () => _openTegliaBuilder(menu),
@@ -963,9 +971,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                       child: ChoiceChip(
                         label: Text(cat.$2),
                         selected: sel,
-                        selectedColor: AppTheme.terracottaPrimary,
+                        selectedColor: AppTheme.toCompleteYellow,
                         labelStyle: TextStyle(
-                          color: sel ? Colors.white : AppTheme.textDarkBrown,
+                          color: sel ? Colors.black : AppTheme.textWhite,
                           fontWeight: FontWeight.bold,
                         ),
                         onSelected: (_) =>
@@ -994,7 +1002,10 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     isAvailable ? () => _addMenuItemDialog(item) : null,
                     title: Text(
                       item.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textWhite,
+                      ),
                     ),
                     subtitle: Text(
                       !isAvailable
@@ -1002,9 +1013,10 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                           : '$priceText • Tocca per varianti/note',
                       style: TextStyle(
                         fontSize: 12,
+                        fontWeight: FontWeight.w600,
                         color: !isAvailable
-                            ? AppTheme.delayAlertRed
-                            : AppTheme.textMutedBrown,
+                            ? AppTheme.toStartRed
+                            : AppTheme.moneyGreen,
                       ),
                     ),
                     trailing: !isAvailable
@@ -1015,7 +1027,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         if (qtyInCart > 0) ...[
                           IconButton(
                             icon: const Icon(Icons.remove_circle_outline,
-                                color: AppTheme.brickBrownDark),
+                                color: AppTheme.toStartRed),
                             onPressed: () =>
                                 _decrementSimpleItem(item.name),
                           ),
@@ -1024,15 +1036,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 16,
-                              color: AppTheme.terracottaPrimary,
+                              color: AppTheme.toCompleteYellow,
                             ),
                           ),
                         ],
                         IconButton(
                           tooltip: 'Aggiungi subito 1',
                           icon: const Icon(Icons.add_circle,
-                              size: 30,
-                              color: AppTheme.terracottaPrimary),
+                              size: 30, color: AppTheme.moneyGreen),
                           onPressed: () => _quickAddItem(item),
                         ),
                       ],
@@ -1049,7 +1060,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
-                  color: AppTheme.brickBrownDark,
+                  color: AppTheme.toCompleteYellow,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1076,9 +1087,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   _isPaid
                       ? 'Il rider NON deve incassare'
                       : 'Da incassare (verrà conteggiato al completamento)',
+                  style: TextStyle(
+                    color: _isPaid
+                        ? AppTheme.moneyGreen
+                        : AppTheme.toCompleteYellow,
+                  ),
                 ),
                 value: _isPaid,
-                activeColor: AppTheme.paidGreen,
+                activeColor: AppTheme.moneyGreen,
                 onChanged: (v) => setState(() => _isPaid = v),
               ),
               TextField(

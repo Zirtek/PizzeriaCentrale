@@ -89,7 +89,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.backgroundWhite,
+      backgroundColor: AppTheme.backgroundBlack,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -105,14 +105,15 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppTheme.warmSurface,
+                          color: AppTheme.surfaceDark,
                           shape: BoxShape.circle,
-                          border: Border.all(color: AppTheme.cardBorder, width: 2),
+                          border: Border.all(
+                              color: AppTheme.toCompleteYellow, width: 2),
                         ),
                         child: const Icon(
                           Icons.local_fire_department,
                           size: 34,
-                          color: AppTheme.terracottaPrimary,
+                          color: AppTheme.toStartRed,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -124,7 +125,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                             style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w900,
-                              color: AppTheme.brickBrownDark,
+                              color: AppTheme.textWhite,
                               letterSpacing: 0.8,
                             ),
                           ),
@@ -132,7 +133,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                             'Accesso rapido postazione',
                             style: TextStyle(
                               fontSize: 13,
-                              color: AppTheme.textMutedBrown,
+                              color: AppTheme.textMuted,
                             ),
                           ),
                         ],
@@ -148,7 +149,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
-                        color: AppTheme.textMutedBrown,
+                        color: AppTheme.textMuted,
                         letterSpacing: 0.6,
                       ),
                     ),
@@ -176,12 +177,12 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                           duration: const Duration(milliseconds: 160),
                           decoration: BoxDecoration(
                             color: selected
-                                ? AppTheme.terracottaPrimary
-                                : AppTheme.warmSurface,
+                                ? AppTheme.toCompleteYellow
+                                : AppTheme.surfaceDark,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: selected
-                                  ? AppTheme.brickBrownDark
+                                  ? AppTheme.toCompleteYellow
                                   : AppTheme.cardBorder,
                               width: selected ? 2 : 1.2,
                             ),
@@ -194,8 +195,8 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                                 _iconForRole(role),
                                 size: 26,
                                 color: selected
-                                    ? Colors.white
-                                    : AppTheme.terracottaPrimary,
+                                    ? Colors.black
+                                    : AppTheme.toCompleteYellow,
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -207,11 +208,11 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                                       role.label,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontWeight: FontWeight.w800,
+                                        fontWeight: FontWeight.w900,
                                         fontSize: 15,
                                         color: selected
-                                            ? Colors.white
-                                            : AppTheme.textDarkBrown,
+                                            ? Colors.black
+                                            : AppTheme.textWhite,
                                       ),
                                     ),
                                     Text(
@@ -221,8 +222,8 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                                       style: TextStyle(
                                         fontSize: 11,
                                         color: selected
-                                            ? Colors.white70
-                                            : AppTheme.textMutedBrown,
+                                            ? Colors.black87
+                                            : AppTheme.textMuted,
                                       ),
                                     ),
                                   ],
@@ -244,7 +245,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
-                        color: AppTheme.textMutedBrown,
+                        color: AppTheme.textMuted,
                         letterSpacing: 0.6,
                       ),
                     ),
@@ -262,12 +263,12 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                         height: 52,
                         decoration: BoxDecoration(
                           color: filled
-                              ? AppTheme.terracottaPrimary
-                              : AppTheme.warmSurface,
+                              ? AppTheme.moneyGreen
+                              : AppTheme.surfaceDark,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: filled
-                                ? AppTheme.brickBrownDark
+                                ? AppTheme.moneyGreen
                                 : AppTheme.cardBorder,
                             width: 1.8,
                           ),
@@ -275,7 +276,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                         child: Center(
                           child: filled
                               ? const Icon(Icons.circle,
-                              size: 14, color: Colors.white)
+                              size: 14, color: Colors.black)
                               : null,
                         ),
                       );
@@ -288,13 +289,14 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFEBEE),
+                        color: AppTheme.darkRedTint,
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.toStartRed),
                       ),
                       child: Text(
                         _errorMessage!,
                         style: const TextStyle(
-                          color: AppTheme.delayAlertRed,
+                          color: AppTheme.toStartRed,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
@@ -344,11 +346,11 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isAction
-                          ? AppTheme.warmSurface
-                          : AppTheme.terracottaPrimary,
+                          ? AppTheme.surfaceDark
+                          : AppTheme.surfaceElevated,
                       foregroundColor: isAction
-                          ? AppTheme.brickBrownDark
-                          : Colors.white,
+                          ? AppTheme.toStartRed
+                          : AppTheme.textWhite,
                       elevation: 0,
                       side: const BorderSide(color: AppTheme.cardBorder),
                     ),
