@@ -7,6 +7,7 @@ class SupabaseService {
   static final SupabaseService instance = SupabaseService._();
 
   final SupabaseClient _client = Supabase.instance.client;
+  bool _didSplitCombinedDrinks = false;
 
   Future<AppUserSession?> loginWithPin(UserRole role, String pin) async {
     final response = await _client.rpc(
@@ -41,11 +42,61 @@ class SupabaseService {
   }
 
   Stream<List<MenuItemModel>> watchMenu() {
+    _ensureCombinedDrinksSplit();
     return _client
         .from('pizzeria_menu')
         .stream(primaryKey: ['id'])
         .order('sort_order', ascending: true)
         .map((rows) => rows.map((r) => MenuItemModel.fromJson(r)).toList());
+  }
+
+  /// Divide automaticamente "cocacola/fanta/te" in 3 prodotti singoli con lo stesso prezzo
+  Future<void> _ensureCombinedDrinksSplit() async {
+    if (_didSplitCombinedDrinks) return;
+    _didSplitCombinedDrinks = true;
+
+    try {
+      final rows = await _client.from('pizzeria_menu').select();
+      final list = (rows as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      for (final row in list) {
+        final name = (row['name'] as String? ?? '').trim();
+        final lower = name.toLowerCase();
+
+        final isCombinedCocaFantaTe = lower.contains('coca') &&
+            lower.contains('fanta') &&
+            lower.contains('/') &&
+            !lower.contains('lattina') &&
+            !lower.contains('1,5') &&
+            !lower.contains('1.5');
+
+        if (isCombinedCocaFantaTe) {
+          for (final singleName in ['Coca Cola', 'Fanta', 'Tè']) {
+            final alreadyExists = list.any(
+                  (r) =>
+              (r['name'] as String? ?? '').trim().toLowerCase() ==
+                  singleName.toLowerCase(),
+            );
+            if (!alreadyExists) {
+              await _client.from('pizzeria_menu').insert({
+                'category': row['category'],
+                'name': singleName,
+                'price': row['price'],
+                'price_confirmed': row['price_confirmed'] ?? true,
+                'available': row['available'] ?? true,
+                'allowed_weekdays': row['allowed_weekdays'],
+                'sort_order': row['sort_order'] ?? 999,
+              });
+            }
+          }
+          await _client.from('pizzeria_menu').delete().eq('id', row['id']);
+        }
+      }
+    } catch (_) {
+      _didSplitCombinedDrinks = false;
+    }
   }
 
   /// Crea l'ordine nello stato "nuovo_ordine" senza rider assegnato
