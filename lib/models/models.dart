@@ -30,7 +30,8 @@ class AppUserSession {
   });
 
   bool get isOwner => role == UserRole.titolare;
-  bool get isStaffOrOwner => role == UserRole.titolare || role == UserRole.dipendente;
+  bool get isStaffOrOwner =>
+      role == UserRole.titolare || role == UserRole.dipendente;
 }
 
 enum OrderSource {
@@ -51,7 +52,7 @@ enum OrderSource {
     );
   }
 
-  /// Regola fondamentale: solo Diretto (se consegna) e Just Eat usano i rider interni
+  /// Solo Diretto (se consegna) e Just Eat usano i rider interni
   bool get usesInternalRiders =>
       this == OrderSource.diretto || this == OrderSource.justEat;
 
@@ -92,9 +93,6 @@ enum DeliveryType {
 
 enum OrderStatus {
   nuovoOrdine('nuovo_ordine', 'Nuovo ordine', Color(0xFFD84315)),
-  daPreparare('da_preparare', 'Da preparare', Color(0xFFEF6C00)),
-  inPreparazione('in_preparazione', 'In preparazione', Color(0xFFF9A825)),
-  inForno('in_forno', 'In forno', Color(0xFFBF360C)),
   pronto('pronto', 'Pronto', Color(0xFF2E7D32)),
   inConsegna('in_consegna', 'In consegna', Color(0xFF1565C0)),
   completato('completato', 'Completato', Color(0xFF5D4037));
@@ -111,22 +109,19 @@ enum OrderStatus {
     );
   }
 
-  /// Restituisce lo stato successivo rispettando la regola del ritiro al banco
+  /// Da Nuovo ordine passa DIRETTAMENTE a Pronto.
+  /// Quando è Pronto, le consegne con rider interni attendono la presa in carico del rider.
   OrderStatus? nextStatus(DeliveryType deliveryType, OrderSource source) {
     switch (this) {
       case OrderStatus.nuovoOrdine:
-        return OrderStatus.daPreparare;
-      case OrderStatus.daPreparare:
-        return OrderStatus.inPreparazione;
-      case OrderStatus.inPreparazione:
-        return OrderStatus.inForno;
-      case OrderStatus.inForno:
         return OrderStatus.pronto;
       case OrderStatus.pronto:
-        if (deliveryType == DeliveryType.ritiro || source == OrderSource.banco) {
-          return OrderStatus.completato; // Salta "In consegna" per il banco
+        if (deliveryType == DeliveryType.ritiro ||
+            source == OrderSource.banco ||
+            source.isExternalCourier) {
+          return OrderStatus.completato;
         }
-        return OrderStatus.inConsegna;
+        return null;
       case OrderStatus.inConsegna:
         return OrderStatus.completato;
       case OrderStatus.completato:
@@ -185,7 +180,6 @@ class MenuItemModel {
     );
   }
 
-  /// Verifica se il prodotto è disponibile nel giorno dell'ordine (es. Martedì=2, Mercoledì=3)
   bool isAvailableOnDate(DateTime date) {
     if (!available) return false;
     if (allowedWeekdays == null || allowedWeekdays!.isEmpty) return true;
@@ -193,7 +187,6 @@ class MenuItemModel {
   }
 }
 
-/// Calcolo automatico del prezzo delle Teglie secondo le regole della pizzeria
 class TegliaPricing {
   static double calculatePrice({
     required bool isMezzaTeglia,
@@ -214,7 +207,7 @@ class TegliaPricing {
     if (selectedFlavors.length == 3) {
       return 22.00;
     }
-    return 20.00; // Teglia intera 1 o 2 gusti semplici
+    return 20.00;
   }
 }
 
@@ -255,8 +248,10 @@ class OrderLineItem {
       category: json['category'] as String? ?? '',
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       unitPrice: (json['unit_price'] as num?)?.toDouble() ?? 0.0,
-      addedIngredients: List<String>.from(json['added_ingredients'] ?? const []),
-      removedIngredients: List<String>.from(json['removed_ingredients'] ?? const []),
+      addedIngredients:
+      List<String>.from(json['added_ingredients'] ?? const []),
+      removedIngredients:
+      List<String>.from(json['removed_ingredients'] ?? const []),
       notes: json['notes'] as String? ?? '',
     );
   }
@@ -274,7 +269,7 @@ class PizzeriaOrder {
   final OrderSource source;
   final List<OrderLineItem> items;
   final String notes;
-  final String? assignedRider; // 'rider_1', 'rider_2', o null
+  final String? assignedRider;
   final double totalAmount;
   final PaymentMethod paymentMethod;
   final bool isPaid;
@@ -311,15 +306,18 @@ class PizzeriaOrder {
       customerName: json['customer_name'] as String? ?? '',
       customerPhone: json['customer_phone'] as String? ?? '',
       deliveryAddress: json['delivery_address'] as String? ?? '',
-      deliveryType: DeliveryType.fromDb(json['delivery_type'] as String? ?? 'ritiro'),
+      deliveryType:
+      DeliveryType.fromDb(json['delivery_type'] as String? ?? 'ritiro'),
       source: OrderSource.fromDb(json['source'] as String? ?? 'diretto'),
       items: rawItems
-          .map((e) => OrderLineItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .map((e) =>
+          OrderLineItem.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList(),
       notes: json['notes'] as String? ?? '',
       assignedRider: json['assigned_rider'] as String?,
       totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0,
-      paymentMethod: PaymentMethod.fromDb(json['payment_method'] as String? ?? 'contanti'),
+      paymentMethod:
+      PaymentMethod.fromDb(json['payment_method'] as String? ?? 'contanti'),
       isPaid: json['is_paid'] as bool? ?? false,
       status: OrderStatus.fromDb(json['status'] as String? ?? 'nuovo_ordine'),
       completedAt: json['completed_at'] != null
@@ -328,18 +326,15 @@ class PizzeriaOrder {
     );
   }
 
-  /// Indica se l'ordine è in ritardo rispetto all'orario richiesto
   bool get isDelayed =>
       status != OrderStatus.completato && DateTime.now().isAfter(scheduledFor);
 
   int get delayMinutes =>
       isDelayed ? DateTime.now().difference(scheduledFor).inMinutes : 0;
 
-  /// Verifica se l'ordine richiede un rider della pizzeria
   bool get needsInternalRider =>
       deliveryType == DeliveryType.consegna && source.usesInternalRiders;
 
-  /// Verifica se l'ordine genera compenso al rider (completato + consegna + Diretto/JustEat)
   bool get generatesRiderCommission =>
       status == OrderStatus.completato &&
           deliveryType == DeliveryType.consegna &&

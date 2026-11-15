@@ -54,6 +54,7 @@ class _RiderScreenState extends State<RiderScreen> {
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now();
+    final myRoleDb = widget.session.role.dbValue;
 
     return Scaffold(
       appBar: AppBar(
@@ -73,31 +74,58 @@ class _RiderScreenState extends State<RiderScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Il rider vede ESCLUSIVAMENTE i propri ordini della giornata
-          final myTodayOrders = snapshot.data!.where((o) {
+          final todayDeliveries = snapshot.data!.where((o) {
             final sameDay = o.scheduledFor.year == today.year &&
                 o.scheduledFor.month == today.month &&
                 o.scheduledFor.day == today.day;
-            return sameDay &&
-                o.assignedRider == widget.session.role.dbValue &&
-                o.source.usesInternalRiders;
+            return sameDay && o.needsInternalRider;
           }).toList()
             ..sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
 
-          final completedDeliveries = myTodayOrders
-              .where((o) => o.status == OrderStatus.completato)
+          // 1. Consegne prese in carico da QUESTO rider e ancora in corso
+          final myActiveOrders = todayDeliveries
+              .where((o) =>
+          o.assignedRider == myRoleDb &&
+              o.status != OrderStatus.completato)
+              .toList();
+
+          // 2. Tutte le consegne del giorno non ancora prese in carico (sia NUOVO ORDINE che PRONTO)
+          final overviewOrders = todayDeliveries
+              .where((o) =>
+          o.assignedRider == null &&
+              o.status != OrderStatus.completato)
+              .toList();
+
+          final readyCount = overviewOrders
+              .where((o) => o.status == OrderStatus.pronto)
               .length;
 
-          final baseQuota = _shiftRegisteredToday ? _todayBaseFee() : 0.0;
-          final todayEarnings = baseQuota + (completedDeliveries * 2.0);
+          // 3. Consegne completate da QUESTO rider oggi
+          final myCompletedOrders = todayDeliveries
+              .where((o) =>
+          o.assignedRider == myRoleDb &&
+              o.status == OrderStatus.completato)
+              .toList();
 
-          return Column(
+          final baseQuota = _shiftRegisteredToday ? _todayBaseFee() : 0.0;
+          final todayEarnings = baseQuota + (myCompletedOrders.length * 2.0);
+
+          final collectedFromDeliveries = myCompletedOrders
+              .where((o) =>
+          o.isPaid && o.paymentMethod != PaymentMethod.online)
+              .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+
+          final stillToCollect = myActiveOrders
+              .where((o) => !o.isPaid)
+              .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
-              // Riepilogo turno e guadagno giornaliero personale
+              // Riepilogo Compenso Personale + Cassa Consegne
               Container(
                 width: double.infinity,
-                margin: const EdgeInsets.all(12),
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: AppTheme.warmSurface,
                   borderRadius: BorderRadius.circular(14),
@@ -112,9 +140,10 @@ class _RiderScreenState extends State<RiderScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'GUADAGNO DI OGGI',
+                              'IL TUO GUADAGNO OGGI',
                               style: TextStyle(
-                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
                                 color: AppTheme.textMutedBrown,
                               ),
                             ),
@@ -127,20 +156,22 @@ class _RiderScreenState extends State<RiderScreen> {
                               ),
                             ),
                             Text(
-                              'Quota turno: € ${baseQuota.toStringAsFixed(0)} + $completedDeliveries consegne (€ ${completedDeliveries * 2})',
+                              'Turno: € ${baseQuota.toStringAsFixed(0)} + ${myCompletedOrders.length} cons. (€ ${myCompletedOrders.length * 2})',
                               style: const TextStyle(fontSize: 12),
                             ),
                           ],
                         ),
                         if (!_loadingShift)
                           _shiftRegisteredToday
-                              ? Chip(
-                            avatar: const Icon(Icons.check_circle,
+                              ? const Chip(
+                            avatar: Icon(Icons.check_circle,
                                 color: Colors.white, size: 18),
-                            label: const Text('Turno attivo'),
+                            label: Text('Turno attivo'),
                             backgroundColor: AppTheme.paidGreen,
-                            labelStyle:
-                            const TextStyle(color: Colors.white),
+                            labelStyle: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           )
                               : ElevatedButton(
                             onPressed: _startShift,
@@ -148,30 +179,176 @@ class _RiderScreenState extends State<RiderScreen> {
                           ),
                       ],
                     ),
+                    const Divider(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'INCASSATI (DA VERSARE)',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textMutedBrown,
+                                ),
+                              ),
+                              Text(
+                                '€ ${collectedFromDeliveries.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.paidGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text(
+                                'IN CONSEGNA DA INCASSARE',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textMutedBrown,
+                                ),
+                              ),
+                              Text(
+                                '€ ${stillToCollect.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.ovenOrangeAccent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
 
-              Expanded(
-                child: myTodayOrders.isEmpty
-                    ? const Center(
-                  child: Text(
-                    'Nessuna consegna assegnata a te al momento.',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: AppTheme.textMutedBrown,
+              // SEZIONE 1: Consegne prese in carico da me in questo momento
+              if (myActiveOrders.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Icon(Icons.delivery_dining,
+                        size: 20, color: AppTheme.terracottaPrimary),
+                    const SizedBox(width: 6),
+                    Text(
+                      'LE TUE CONSEGNE IN CORSO (${myActiveOrders.length})',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.terracottaPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...myActiveOrders.map(
+                      (order) => _RiderDeliveryCard(
+                    order: order,
+                    currentRiderRole: myRoleDb,
+                    isUnassignedOverview: false,
+                    onShiftAutoStarted: _checkTodayShift,
+                  ),
+                ),
+              ],
+
+              // SEZIONE 2: Panoramica completa delle consegne da fare oggi (Nuovo ordine + Pronto)
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Icon(Icons.list_alt,
+                      size: 20, color: AppTheme.brickBrownDark),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'CONSEGNE DA FARE OGGI (${overviewOrders.length})',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.brickBrownDark,
+                      ),
+                    ),
+                  ),
+                  if (readyCount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.paidGreen,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$readyCount PRONTE',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (overviewOrders.isEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 22),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warmSurface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Nessuna consegna in programma al momento.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textMutedBrown,
+                      ),
                     ),
                   ),
                 )
-                    : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-                  itemCount: myTodayOrders.length,
-                  itemBuilder: (context, index) {
-                    final order = myTodayOrders[index];
-                    return _RiderDeliveryCard(order: order);
-                  },
+              else
+                ...overviewOrders.map(
+                      (order) => _RiderDeliveryCard(
+                    order: order,
+                    currentRiderRole: myRoleDb,
+                    isUnassignedOverview: true,
+                    onShiftAutoStarted: _checkTodayShift,
+                  ),
                 ),
-              ),
+
+              // SEZIONE 3: Consegne completate oggi
+              if (myCompletedOrders.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                Text(
+                  'COMPLETATE DA TE OGGI (${myCompletedOrders.length})',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.textMutedBrown,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...myCompletedOrders.map(
+                      (order) => _RiderDeliveryCard(
+                    order: order,
+                    currentRiderRole: myRoleDb,
+                    isUnassignedOverview: false,
+                    onShiftAutoStarted: _checkTodayShift,
+                  ),
+                ),
+              ],
             ],
           );
         },
@@ -180,18 +357,190 @@ class _RiderScreenState extends State<RiderScreen> {
   }
 }
 
-class _RiderDeliveryCard extends StatelessWidget {
+class _RiderDeliveryCard extends StatefulWidget {
   final PizzeriaOrder order;
+  final String currentRiderRole;
+  final bool isUnassignedOverview;
+  final VoidCallback onShiftAutoStarted;
 
-  const _RiderDeliveryCard({required this.order});
+  const _RiderDeliveryCard({
+    required this.order,
+    required this.currentRiderRole,
+    required this.isUnassignedOverview,
+    required this.onShiftAutoStarted,
+  });
+
+  @override
+  State<_RiderDeliveryCard> createState() => _RiderDeliveryCardState();
+}
+
+class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
+  bool _isBusy = false;
+
+  Future<void> _takeInCharge() async {
+    setState(() => _isBusy = true);
+    try {
+      final claimed = await SupabaseService.instance.claimDelivery(
+        widget.order.id,
+        widget.currentRiderRole,
+      );
+      if (!mounted) return;
+      if (!claimed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Consegna non ancora pronta o già presa dall\'altro rider.'),
+          ),
+        );
+        return;
+      }
+
+      await SupabaseService.instance.registerRiderShift(
+        widget.currentRiderRole,
+        widget.order.scheduledFor,
+      );
+      widget.onShiftAutoStarted();
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  Future<void> _releaseDelivery() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Rilasciare consegna #${widget.order.orderNumber}?'),
+        content: const Text(
+          'La consegna tornerà tra quelle pronte disponibili.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Rilascia'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _isBusy = true);
+    try {
+      await SupabaseService.instance.releaseDelivery(widget.order.id);
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  Future<void> _completeDelivery() async {
+    final order = widget.order;
+    PaymentMethod selectedMethod = order.paymentMethod;
+
+    if (!order.isPaid) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDlgState) => AlertDialog(
+            title: Text('Consegna #${order.orderNumber}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hai incassato € ${order.totalAmount.toStringAsFixed(2)}?',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.paidGreen,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<PaymentMethod>(
+                  value: selectedMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Metodo incasso',
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: PaymentMethod.contanti,
+                      child: Text('Contanti'),
+                    ),
+                    DropdownMenuItem(
+                      value: PaymentMethod.carta,
+                      child: Text('Carta / POS'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setDlgState(() => selectedMethod = v);
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annulla'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.paidGreen,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: const Icon(Icons.check_circle),
+                label: const Text('SÌ, INCASSATO'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
+
+    setState(() => _isBusy = true);
+    try {
+      await SupabaseService.instance.registerRiderShift(
+        widget.currentRiderRole,
+        order.scheduledFor,
+      );
+      widget.onShiftAutoStarted();
+
+      await SupabaseService.instance.updateOrderStatus(
+        order.id,
+        OrderStatus.completato,
+        paymentMethod: selectedMethod,
+      );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     final timeStr = DateFormat('HH:mm').format(order.scheduledFor);
     final isCompleted = order.status == OrderStatus.completato;
+    final isReadyToClaim =
+        widget.isUnassignedOverview && order.status == OrderStatus.pronto;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: order.isDelayed
+              ? AppTheme.delayAlertRed
+              : (isReadyToClaim
+              ? AppTheme.paidGreen
+              : (isCompleted
+              ? AppTheme.paidGreen.withOpacity(0.5)
+              : AppTheme.cardBorder)),
+          width: (order.isDelayed || isReadyToClaim) ? 2.2 : 1.2,
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -201,10 +550,12 @@ class _RiderDeliveryCard extends StatelessWidget {
               children: [
                 Text(
                   '#${order.orderNumber}  •  Ore $timeStr',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.w900,
-                    color: AppTheme.brickBrownDark,
+                    color: order.isDelayed
+                        ? AppTheme.delayAlertRed
+                        : AppTheme.brickBrownDark,
                   ),
                 ),
                 const Spacer(),
@@ -248,40 +599,64 @@ class _RiderDeliveryCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (order.customerPhone.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              InkWell(
-                onTap: () =>
-                    launchUrl(Uri.parse('tel:${order.customerPhone}')),
-                child: Row(
-                  children: [
-                    const Icon(Icons.phone, size: 18, color: AppTheme.paidGreen),
-                    const SizedBox(width: 6),
-                    Text(
-                      order.customerPhone,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: AppTheme.paidGreen,
-                        fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
+
+            if (!widget.isUnassignedOverview) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (order.deliveryAddress.isNotEmpty)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          final encoded =
+                          Uri.encodeComponent(order.deliveryAddress);
+                          launchUrl(
+                            Uri.parse(
+                                'https://www.google.com/maps/search/?api=1&query=$encoded'),
+                            mode: LaunchMode.externalApplication,
+                          );
+                        },
+                        icon: const Icon(Icons.map_outlined, size: 18),
+                        label: const Text('NAVIGA'),
                       ),
                     ),
-                  ],
-                ),
+                  if (order.deliveryAddress.isNotEmpty &&
+                      order.customerPhone.isNotEmpty)
+                    const SizedBox(width: 8),
+                  if (order.customerPhone.isNotEmpty)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            launchUrl(Uri.parse('tel:${order.customerPhone}')),
+                        icon: const Icon(Icons.phone,
+                            size: 18, color: AppTheme.paidGreen),
+                        label: const Text('CHIAMA'),
+                      ),
+                    ),
+                ],
               ),
             ],
+
             if (order.notes.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(
-                'Indicazioni: ${order.notes}',
-                style: const TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: AppTheme.brickBrownDark,
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Indicazioni: ${order.notes}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.brickBrownDark,
+                  ),
                 ),
               ),
             ],
             const Divider(height: 18),
-            // Indicazione chiara su incasso vs già pagato
+
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
@@ -293,7 +668,9 @@ class _RiderDeliveryCard extends StatelessWidget {
               ),
               child: Text(
                 order.isPaid
-                    ? 'GIÀ PAGATO (${order.paymentMethod.label}) • NON CHIEDERE SOLDI'
+                    ? (isCompleted
+                    ? 'INCASSATO / PAGATO: € ${order.totalAmount.toStringAsFixed(2)} (${order.paymentMethod.label})'
+                    : 'GIÀ PAGATO (${order.paymentMethod.label}) • NON CHIEDERE SOLDI')
                     : 'DA INCASSARE: € ${order.totalAmount.toStringAsFixed(2)} (${order.paymentMethod.label})',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -304,40 +681,66 @@ class _RiderDeliveryCard extends StatelessWidget {
                 ),
               ),
             ),
-            if (!isCompleted) ...[
+
+            // Attivo solo quando lo stato è PRONTO; bloccato quando è NUOVO ORDINE
+            if (widget.isUnassignedOverview) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isReadyToClaim
+                        ? AppTheme.terracottaPrimary
+                        : AppTheme.cardBorder,
+                    disabledBackgroundColor: AppTheme.cardBorder,
+                    disabledForegroundColor: AppTheme.textMutedBrown,
+                  ),
+                  onPressed: (!isReadyToClaim || _isBusy) ? null : _takeInCharge,
+                  icon: _isBusy
+                      ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                      : Icon(
+                    isReadyToClaim
+                        ? Icons.delivery_dining
+                        : Icons.schedule,
+                    size: 22,
+                  ),
+                  label: Text(
+                    isReadyToClaim
+                        ? 'PRENDI IN CARICO'
+                        : 'NUOVO ORDINE • ATTENDI "PRONTO"',
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ] else if (!isCompleted) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
-                  if (order.status != OrderStatus.inConsegna)
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => SupabaseService.instance
-                            .updateOrderStatus(
-                            order.id, OrderStatus.inConsegna),
-                        icon: const Icon(Icons.delivery_dining),
-                        label: const Text('PRENDI IN CARICO'),
-                      ),
-                    ),
-                  if (order.status != OrderStatus.inConsegna)
-                    const SizedBox(width: 10),
+                  OutlinedButton(
+                    onPressed: _isBusy ? null : _releaseDelivery,
+                    child: const Text('Rilascia'),
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.paidGreen,
+                    child: SizedBox(
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.paidGreen,
+                        ),
+                        onPressed: _isBusy ? null : _completeDelivery,
+                        icon: const Icon(Icons.check_circle),
+                        label: const Text('CONSEGNATO'),
                       ),
-                      onPressed: () async {
-                        // Registra automaticamente il turno se il rider ha dimenticato di cliccare "Inizia turno"
-                        if (order.assignedRider != null) {
-                          await SupabaseService.instance.registerRiderShift(
-                            order.assignedRider!,
-                            order.scheduledFor,
-                          );
-                        }
-                        await SupabaseService.instance
-                            .updateOrderStatus(order.id, OrderStatus.completato);
-                      },
-                      icon: const Icon(Icons.check_circle),
-                      label: const Text('CONSEGNATO'),
                     ),
                   ),
                 ],

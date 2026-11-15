@@ -10,8 +10,8 @@ import 'owner_admin_screen.dart';
 enum AgendaFilter {
   tutti('Tutti'),
   inRitardo('In ritardo'),
-  nonPagati('Non pagati'),
-  senzaRider('Senza rider');
+  nonPagati('Da incassare'),
+  consegne('Consegne');
 
   final String label;
   const AgendaFilter(this.label);
@@ -40,7 +40,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
   @override
   void initState() {
     super.initState();
-    // Aggiorna l'interfaccia ogni 30 secondi per evidenziare tempestivamente gli ordini in ritardo
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
@@ -70,8 +69,10 @@ class _AgendaScreenState extends State<AgendaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final isToday = _isSameDay(_selectedDate, now);
     final dateFormatted =
-    DateFormat('EEEE d MMMM yyyy', 'it_IT').format(_selectedDate);
+    DateFormat('EEEE d MMMM', 'it_IT').format(_selectedDate);
 
     return Scaffold(
       appBar: AppBar(
@@ -83,7 +84,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
             ),
             Text(
-              'Accesso: ${widget.session.displayName}',
+              'Profilo: ${widget.session.displayName}',
               style: const TextStyle(fontSize: 12, color: Colors.white70),
             ),
           ],
@@ -91,7 +92,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
         actions: [
           if (widget.session.isOwner)
             IconButton(
-              tooltip: 'Menu, Prezzi e Compensi Rider',
+              tooltip: 'Incassi, Rider e Listino',
               icon: const Icon(Icons.bar_chart_rounded, size: 28),
               onPressed: () {
                 Navigator.push(
@@ -112,10 +113,10 @@ class _AgendaScreenState extends State<AgendaScreen> {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppTheme.terracottaPrimary,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_circle_outline, size: 28),
+        icon: const Icon(Icons.add_circle_outline, size: 26),
         label: const Text(
           'NUOVO ORDINE',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
         ),
         onPressed: () {
           Navigator.push(
@@ -126,181 +127,317 @@ class _AgendaScreenState extends State<AgendaScreen> {
           );
         },
       ),
-      body: Column(
-        children: [
-          // Barra navigazione data
-          Container(
-            color: AppTheme.warmSurface,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left, size: 30),
-                  color: AppTheme.brickBrownDark,
-                  onPressed: () => setState(() {
-                    _selectedDate =
-                        _selectedDate.subtract(const Duration(days: 1));
-                  }),
+      body: StreamBuilder<List<PizzeriaOrder>>(
+        stream: SupabaseService.instance.watchOrders(),
+        builder: (context, snapshot) {
+          final allOrders = snapshot.data ?? [];
+          final allDayOrders = allOrders
+              .where((o) => _isSameDay(o.scheduledFor, _selectedDate))
+              .toList();
+
+          final delayedCount = allDayOrders.where((o) => o.isDelayed).length;
+          final unpaidCount = allDayOrders.where((o) => !o.isPaid).length;
+          final deliveriesCount = allDayOrders
+              .where((o) => o.deliveryType == DeliveryType.consegna)
+              .length;
+
+          final collectedRevenue = allDayOrders
+              .where((o) => o.isPaid)
+              .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+          final pendingRevenue = allDayOrders
+              .where((o) => !o.isPaid)
+              .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+          final totalDayRevenue = collectedRevenue + pendingRevenue;
+
+          var visibleOrders = List<PizzeriaOrder>.from(allDayOrders);
+          if (_hideCompleted) {
+            visibleOrders = visibleOrders
+                .where((o) => o.status != OrderStatus.completato)
+                .toList();
+          }
+          if (_activeFilter == AgendaFilter.inRitardo) {
+            visibleOrders = visibleOrders.where((o) => o.isDelayed).toList();
+          } else if (_activeFilter == AgendaFilter.nonPagati) {
+            visibleOrders = visibleOrders.where((o) => !o.isPaid).toList();
+          } else if (_activeFilter == AgendaFilter.consegne) {
+            visibleOrders = visibleOrders
+                .where((o) => o.deliveryType == DeliveryType.consegna)
+                .toList();
+          }
+
+          visibleOrders.sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
+
+          return Column(
+            children: [
+              // Barra navigazione data con tasto rapido OGGI
+              Container(
+                color: AppTheme.warmSurface,
+                padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left, size: 28),
+                      color: AppTheme.brickBrownDark,
+                      onPressed: () => setState(() {
+                        _selectedDate =
+                            _selectedDate.subtract(const Duration(days: 1));
+                      }),
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        onTap: _pickDate,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.calendar_today,
+                                  size: 17, color: AppTheme.terracottaPrimary),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  dateFormatted.toUpperCase(),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    color: AppTheme.brickBrownDark,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (!isToday)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: ActionChip(
+                          label: const Text(
+                            'OGGI',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                          backgroundColor: AppTheme.terracottaPrimary,
+                          onPressed: () =>
+                              setState(() => _selectedDate = DateTime.now()),
+                        ),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right, size: 28),
+                      color: AppTheme.brickBrownDark,
+                      onPressed: () => setState(() {
+                        _selectedDate =
+                            _selectedDate.add(const Duration(days: 1));
+                      }),
+                    ),
+                  ],
                 ),
-                InkWell(
-                  onTap: _pickDate,
+              ),
+
+              // Riepilogo Incassi Titolare
+              if (widget.session.isOwner)
+                Container(
+                  width: double.infinity,
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF3E5DF),
+                    border: Border(
+                      top: BorderSide(color: AppTheme.cardBorder),
+                      bottom: BorderSide(color: AppTheme.cardBorder),
+                    ),
+                  ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today,
-                          size: 18, color: AppTheme.terracottaPrimary),
-                      const SizedBox(width: 8),
-                      Text(
-                        dateFormatted.toUpperCase(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: AppTheme.brickBrownDark,
+                      Expanded(
+                        child: _RevenueMetricTile(
+                          label: 'INCASSATO',
+                          value: '€ ${collectedRevenue.toStringAsFixed(2)}',
+                          valueColor: AppTheme.paidGreen,
+                        ),
+                      ),
+                      Container(
+                          width: 1, height: 28, color: AppTheme.cardBorder),
+                      Expanded(
+                        child: _RevenueMetricTile(
+                          label: 'IN SOSPESO',
+                          value: '€ ${pendingRevenue.toStringAsFixed(2)}',
+                          valueColor: pendingRevenue > 0
+                              ? AppTheme.ovenOrangeAccent
+                              : AppTheme.textMutedBrown,
+                        ),
+                      ),
+                      Container(
+                          width: 1, height: 28, color: AppTheme.cardBorder),
+                      Expanded(
+                        child: _RevenueMetricTile(
+                          label: 'TOTALE (${allDayOrders.length})',
+                          value: '€ ${totalDayRevenue.toStringAsFixed(2)}',
+                          valueColor: AppTheme.brickBrownDark,
                         ),
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right, size: 30),
-                  color: AppTheme.brickBrownDark,
-                  onPressed: () => setState(() {
-                    _selectedDate = _selectedDate.add(const Duration(days: 1));
-                  }),
-                ),
-              ],
-            ),
-          ),
 
-          // Barra Filtri rapidi
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                ...AgendaFilter.values.map((filter) {
-                  final selected = _activeFilter == filter;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(filter.label),
-                      selected: selected,
-                      selectedColor: AppTheme.terracottaPrimary,
-                      labelStyle: TextStyle(
-                        color:
-                        selected ? Colors.white : AppTheme.textDarkBrown,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      onSelected: (_) =>
-                          setState(() => _activeFilter = filter),
-                    ),
-                  );
-                }),
-                FilterChip(
-                  label: const Text('Nascondi completati'),
-                  selected: _hideCompleted,
-                  selectedColor: AppTheme.brickBrownDark,
-                  checkmarkColor: Colors.white,
-                  labelStyle: TextStyle(
-                    color: _hideCompleted
-                        ? Colors.white
-                        : AppTheme.textDarkBrown,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  onSelected: (val) => setState(() => _hideCompleted = val),
-                ),
-              ],
-            ),
-          ),
-
-          // Lista ordini in tempo reale
-          Expanded(
-            child: StreamBuilder<List<PizzeriaOrder>>(
-              stream: SupabaseService.instance.watchOrders(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Errore caricamento ordini: ${snapshot.error}'),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final allOrders = snapshot.data!;
-                var dayOrders = allOrders
-                    .where((o) => _isSameDay(o.scheduledFor, _selectedDate))
-                    .toList();
-
-                // Riepilogo incassi rapido per il solo Titolare
-                final dayRevenue = dayOrders.fold<double>(
-                    0.0, (sum, o) => sum + o.totalAmount);
-
-                // Applica filtri
-                if (_hideCompleted) {
-                  dayOrders = dayOrders
-                      .where((o) => o.status != OrderStatus.completato)
-                      .toList();
-                }
-                if (_activeFilter == AgendaFilter.inRitardo) {
-                  dayOrders = dayOrders.where((o) => o.isDelayed).toList();
-                } else if (_activeFilter == AgendaFilter.nonPagati) {
-                  dayOrders = dayOrders.where((o) => !o.isPaid).toList();
-                } else if (_activeFilter == AgendaFilter.senzaRider) {
-                  dayOrders = dayOrders
-                      .where((o) =>
-                  o.needsInternalRider && o.assignedRider == null)
-                      .toList();
-                }
-
-                dayOrders
-                    .sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
-
-                return Column(
+              // Barra Filtri rapidi
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
                   children: [
-                    if (widget.session.isOwner)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 6),
-                        color: const Color(0xFFF3E5DF),
-                        child: Text(
-                          'Ordini giorno: ${dayOrders.length}  •  Totale previsto: € ${dayRevenue.toStringAsFixed(2)}',
-                          style: const TextStyle(
+                    ...AgendaFilter.values.map((filter) {
+                      final selected = _activeFilter == filter;
+                      final count = switch (filter) {
+                        AgendaFilter.tutti => allDayOrders.length,
+                        AgendaFilter.inRitardo => delayedCount,
+                        AgendaFilter.nonPagati => unpaidCount,
+                        AgendaFilter.consegne => deliveriesCount,
+                      };
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text('${filter.label} ($count)'),
+                          selected: selected,
+                          selectedColor: AppTheme.terracottaPrimary,
+                          labelStyle: TextStyle(
+                            color: selected
+                                ? Colors.white
+                                : AppTheme.textDarkBrown,
                             fontWeight: FontWeight.bold,
-                            color: AppTheme.brickBrownDark,
+                            fontSize: 13,
                           ),
+                          onSelected: (_) =>
+                              setState(() => _activeFilter = filter),
                         ),
+                      );
+                    }),
+                    FilterChip(
+                      label: const Text('Nascondi completati'),
+                      selected: _hideCompleted,
+                      selectedColor: AppTheme.brickBrownDark,
+                      checkmarkColor: Colors.white,
+                      labelStyle: TextStyle(
+                        color: _hideCompleted
+                            ? Colors.white
+                            : AppTheme.textDarkBrown,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
                       ),
-                    Expanded(
-                      child: dayOrders.isEmpty
-                          ? const Center(
-                        child: Text(
-                          'Nessun ordine presente per i filtri selezionati.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: AppTheme.textMutedBrown,
-                          ),
-                        ),
-                      )
-                          : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
-                        itemCount: dayOrders.length,
-                        itemBuilder: (context, index) {
-                          return _OrderAgendaCard(
-                            order: dayOrders[index],
-                            isOwner: widget.session.isOwner,
-                          );
-                        },
-                      ),
+                      onSelected: (val) => setState(() => _hideCompleted = val),
                     ),
                   ],
-                );
-              },
-            ),
-          ),
-        ],
+                ),
+              ),
+
+              // Lista ordini in tempo reale
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                            'Errore caricamento ordini: ${snapshot.error}'),
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (visibleOrders.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.receipt_long_outlined,
+                                size: 48, color: AppTheme.textMutedBrown),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Nessun ordine presente per i filtri selezionati.',
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: AppTheme.textMutedBrown,
+                              ),
+                            ),
+                            if (_activeFilter != AgendaFilter.tutti ||
+                                _hideCompleted) ...[
+                              const SizedBox(height: 10),
+                              OutlinedButton(
+                                onPressed: () => setState(() {
+                                  _activeFilter = AgendaFilter.tutti;
+                                  _hideCompleted = false;
+                                }),
+                                child: const Text('Mostra tutti gli ordini'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 92),
+                      itemCount: visibleOrders.length,
+                      itemBuilder: (context, index) {
+                        return _OrderAgendaCard(
+                          order: visibleOrders[index],
+                          isOwner: widget.session.isOwner,
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+class _RevenueMetricTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  const _RevenueMetricTile({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.textMutedBrown,
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: valueColor,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -311,12 +448,105 @@ class _OrderAgendaCard extends StatelessWidget {
 
   const _OrderAgendaCard({required this.order, required this.isOwner});
 
+  List<OrderStatus> _workflowSteps() {
+    if (order.deliveryType == DeliveryType.ritiro ||
+        order.source == OrderSource.banco ||
+        order.source.isExternalCourier) {
+      return const [
+        OrderStatus.nuovoOrdine,
+        OrderStatus.pronto,
+        OrderStatus.completato,
+      ];
+    }
+    return const [
+      OrderStatus.nuovoOrdine,
+      OrderStatus.pronto,
+      OrderStatus.inConsegna,
+      OrderStatus.completato,
+    ];
+  }
+
+  Future<void> _handleCompleteOrder(BuildContext context) async {
+    if (order.isPaid) {
+      await SupabaseService.instance
+          .updateOrderStatus(order.id, OrderStatus.completato);
+      return;
+    }
+
+    PaymentMethod selectedMethod = order.paymentMethod;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: Text('Completa e Incassa #${order.orderNumber}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Importo incassato: € ${order.totalAmount.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: AppTheme.paidGreen,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Metodo di pagamento:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<PaymentMethod>(
+                value: selectedMethod,
+                items: PaymentMethod.values
+                    .map((m) => DropdownMenuItem(value: m, child: Text(m.label)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setDlgState(() => selectedMethod = v);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.paidGreen,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.check_circle),
+              label: const Text('Conferma Incasso'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      await SupabaseService.instance.updateOrderStatus(
+        order.id,
+        OrderStatus.completato,
+        paymentMethod: selectedMethod,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final timeRequested = DateFormat('HH:mm').format(order.scheduledFor);
     final timeReceived = DateFormat('HH:mm').format(order.createdAt);
     final nextStatus =
     order.status.nextStatus(order.deliveryType, order.source);
+    final steps = _workflowSteps();
+    final currentStepIdx = steps.indexOf(order.status);
+    final isCompleted = order.status == OrderStatus.completato;
+    final isWaitingForRider = order.needsInternalRider &&
+        order.status == OrderStatus.pronto &&
+        order.assignedRider == null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -325,7 +555,9 @@ class _OrderAgendaCard extends StatelessWidget {
         side: BorderSide(
           color: order.isDelayed
               ? AppTheme.delayAlertRed
-              : AppTheme.cardBorder,
+              : (isCompleted
+              ? AppTheme.paidGreen.withOpacity(0.45)
+              : AppTheme.cardBorder),
           width: order.isDelayed ? 2.5 : 1.2,
         ),
       ),
@@ -334,7 +566,7 @@ class _OrderAgendaCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Riga 1: Numero ordine, Orario richiesto, Provenienza, Ritardo
+            // Riga 1: Numero ordine, Orario, Provenienza, Menu rapido stato
             Row(
               children: [
                 Container(
@@ -389,7 +621,66 @@ class _OrderAgendaCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                PopupMenuButton<OrderStatus>(
+                  tooltip: 'Scegli stato direttamente',
+                  icon: const Icon(Icons.more_vert,
+                      color: AppTheme.brickBrownDark),
+                  onSelected: (chosen) async {
+                    if (chosen == OrderStatus.completato) {
+                      await _handleCompleteOrder(context);
+                    } else {
+                      await SupabaseService.instance
+                          .updateOrderStatus(order.id, chosen);
+                    }
+                  },
+                  itemBuilder: (_) => steps
+                      .map(
+                        (s) => PopupMenuItem(
+                      value: s,
+                      child: Row(
+                        children: [
+                          Icon(
+                            s == order.status
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 18,
+                            color: s.color,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            s.label,
+                            style: TextStyle(
+                              fontWeight: s == order.status
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                      .toList(),
+                ),
               ],
+            ),
+
+            // Barra visiva avanzamento (Nuovo ordine -> Pronto -> Consegna -> Completato)
+            const SizedBox(height: 8),
+            Row(
+              children: List.generate(steps.length, (i) {
+                final active = i <= currentStepIdx;
+                return Expanded(
+                  child: Container(
+                    height: 5,
+                    margin:
+                    EdgeInsets.only(right: i == steps.length - 1 ? 0 : 4),
+                    decoration: BoxDecoration(
+                      color: active ? order.status.color : AppTheme.cardBorder,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                );
+              }),
             ),
 
             if (order.isDelayed) ...[
@@ -408,7 +699,7 @@ class _OrderAgendaCard extends StatelessWidget {
                         color: Colors.white, size: 18),
                     const SizedBox(width: 6),
                     Text(
-                      'ORDINE IN RITARDO DI ${order.delayMinutes} MINUTI',
+                      'IN RITARDO DI ${order.delayMinutes} MINUTI',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -422,20 +713,45 @@ class _OrderAgendaCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // Riga 2: Cliente, Telefono, Ritiro o Consegna + Indirizzo
+            // Riga 2: Tipo servizio, Cliente, Telefono, Indirizzo
             Row(
               children: [
-                Icon(
-                  order.deliveryType == DeliveryType.consegna
-                      ? Icons.delivery_dining
-                      : Icons.storefront,
-                  color: AppTheme.terracottaPrimary,
-                  size: 20,
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.backgroundWhite,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        order.deliveryType == DeliveryType.consegna
+                            ? Icons.delivery_dining
+                            : Icons.storefront,
+                        color: AppTheme.terracottaPrimary,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        order.deliveryType == DeliveryType.consegna
+                            ? 'CONSEGNA'
+                            : 'RITIRO',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.brickBrownDark,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${order.customerName} ${order.customerPhone.isNotEmpty ? "• ${order.customerPhone}" : ""}',
+                    '${order.customerName}${order.customerPhone.isNotEmpty ? " • ${order.customerPhone}" : ""}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -447,18 +763,27 @@ class _OrderAgendaCard extends StatelessWidget {
             if (order.deliveryType == DeliveryType.consegna &&
                 order.deliveryAddress.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 4, left: 26),
-                child: Text(
-                  order.deliveryAddress,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.textMutedBrown,
-                    fontWeight: FontWeight.w600,
-                  ),
+                padding: const EdgeInsets.only(top: 5, left: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        size: 16, color: AppTheme.terracottaPrimary),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        order.deliveryAddress,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textMutedBrown,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
-            const Divider(height: 18),
+            const Divider(height: 16),
 
             // Prodotti ordinati
             ...order.items.map((item) {
@@ -468,16 +793,34 @@ class _OrderAgendaCard extends StatelessWidget {
                 if (item.notes.isNotEmpty) item.notes,
               ];
               return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.only(bottom: 5),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.backgroundWhite,
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(color: AppTheme.cardBorder),
+                          ),
+                          child: Text(
+                            '${item.quantity}x',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: AppTheme.terracottaPrimary,
+                            ),
+                          ),
+                        ),
                         Expanded(
                           child: Text(
-                            '${item.quantity}x ${item.name}',
+                            item.name,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -492,7 +835,7 @@ class _OrderAgendaCard extends StatelessWidget {
                     ),
                     if (mods.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(left: 16),
+                        padding: const EdgeInsets.only(left: 34, top: 2),
                         child: Text(
                           mods.join(' | '),
                           style: const TextStyle(
@@ -510,6 +853,7 @@ class _OrderAgendaCard extends StatelessWidget {
             if (order.notes.isNotEmpty)
               Container(
                 margin: const EdgeInsets.only(top: 6),
+                width: double.infinity,
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFF3E0),
@@ -524,47 +868,57 @@ class _OrderAgendaCard extends StatelessWidget {
                 ),
               ),
 
-            const Divider(height: 18),
+            const Divider(height: 16),
 
-            // Sezione Rider (solo se Diretto o Just Eat a domicilio)
+            // Stato presa in carico Rider
             if (order.needsInternalRider)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Rider: ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<String?>(
-                        value: order.assignedRider,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: null,
-                            child: Text('Da assegnare'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'rider_1',
-                            child: Text('Rider 1'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'rider_2',
-                            child: Text('Rider 2'),
-                          ),
-                        ],
-                        onChanged: (val) {
-                          SupabaseService.instance.assignRider(order.id, val);
-                        },
+                child: Container(
+                  width: double.infinity,
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppTheme.backgroundWhite,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        order.assignedRider != null
+                            ? Icons.sports_motorsports
+                            : (order.status == OrderStatus.pronto
+                            ? Icons.notifications_active_outlined
+                            : Icons.visibility_outlined),
+                        size: 18,
+                        color: order.assignedRider != null
+                            ? AppTheme.terracottaPrimary
+                            : (order.status == OrderStatus.pronto
+                            ? AppTheme.paidGreen
+                            : AppTheme.textMutedBrown),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          order.assignedRider != null
+                              ? 'Presa in carico da: ${UserRole.fromDb(order.assignedRider!).label}'
+                              : (order.status == OrderStatus.pronto
+                              ? 'Pronto • Il rider può ora prenderlo in carico'
+                              : 'Visibile ai rider • Segna "Pronto" per sbloccarlo'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: order.assignedRider != null
+                                ? AppTheme.brickBrownDark
+                                : (order.status == OrderStatus.pronto
+                                ? AppTheme.paidGreen
+                                : AppTheme.textMutedBrown),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else if (order.source.isExternalCourier)
@@ -579,7 +933,7 @@ class _OrderAgendaCard extends StatelessWidget {
                 ),
               ),
 
-            // Riga finale: Totale + Stato Pagamento + Avanzamento Stato Preparazione
+            // Riga finale: Totale + Stato Pagamento + Pulsante (Nuovo ordine -> Pronto -> Completato)
             Row(
               children: [
                 Column(
@@ -593,25 +947,40 @@ class _OrderAgendaCard extends StatelessWidget {
                         color: AppTheme.brickBrownDark,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     InkWell(
                       onTap: () => SupabaseService.instance
                           .toggleOrderPaid(order.id, !order.isPaid),
+                      borderRadius: BorderRadius.circular(6),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: order.isPaid
                               ? AppTheme.paidGreen
                               : AppTheme.ovenOrangeAccent,
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text(
-                          '${order.paymentMethod.label} • ${order.isPaid ? "PAGATO" : "DA INCASSARE"}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              order.isPaid
+                                  ? Icons.check_circle
+                                  : Icons.payments_outlined,
+                              size: 13,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${order.paymentMethod.label} • ${order.isPaid ? "PAGATO" : "DA INCASSARE"}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -645,17 +1014,25 @@ class _OrderAgendaCard extends StatelessWidget {
                       }
                     },
                   ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: order.status.color,
+                    disabledBackgroundColor: order.status.color,
+                    disabledForegroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
                   ),
                   onPressed: nextStatus == null
                       ? null
-                      : () => SupabaseService.instance
-                      .updateOrderStatus(order.id, nextStatus),
+                      : () async {
+                    if (nextStatus == OrderStatus.completato) {
+                      await _handleCompleteOrder(context);
+                    } else {
+                      await SupabaseService.instance
+                          .updateOrderStatus(order.id, nextStatus);
+                    }
+                  },
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -668,8 +1045,18 @@ class _OrderAgendaCard extends StatelessWidget {
                       ),
                       if (nextStatus != null)
                         Text(
-                          'Tocca -> ${nextStatus.label}',
+                          nextStatus == OrderStatus.pronto
+                              ? 'Segna Pronto ->'
+                              : 'Completa ->',
                           style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white70,
+                          ),
+                        )
+                      else if (isWaitingForRider)
+                        const Text(
+                          'In attesa rider',
+                          style: TextStyle(
                             fontSize: 10,
                             color: Colors.white70,
                           ),

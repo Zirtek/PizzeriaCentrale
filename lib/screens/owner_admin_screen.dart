@@ -37,7 +37,7 @@ class _OwnerAdminScreenState extends State<OwnerAdminScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           tabs: const [
-            Tab(icon: Icon(Icons.delivery_dining), text: 'Compensi Rider'),
+            Tab(icon: Icon(Icons.payments_outlined), text: 'Incassi e Rider'),
             Tab(icon: Icon(Icons.restaurant_menu), text: 'Menu e Prezzi'),
             Tab(icon: Icon(Icons.lock), text: 'Gestione PIN'),
           ],
@@ -69,16 +69,17 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
     final now = DateTime.now();
     if (_period == 'settimana') {
       final monday = now.subtract(Duration(days: now.weekday - 1));
-      return (monday, now);
+      return (DateTime(monday.year, monday.month, monday.day), now);
     } else if (_period == 'mese') {
       return (DateTime(now.year, now.month, 1), now);
     }
-    return (now, now);
+    return (DateTime(now.year, now.month, now.day), now);
   }
 
   @override
   Widget build(BuildContext context) {
     final (from, to) = _dateRange();
+    final endOfDay = DateTime(to.year, to.month, to.day, 23, 59, 59);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -93,6 +94,91 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
           onSelectionChanged: (s) => setState(() => _period = s.first),
         ),
         const SizedBox(height: 16),
+
+        // Riepilogo Incassi del periodo selezionato
+        StreamBuilder<List<PizzeriaOrder>>(
+          stream: SupabaseService.instance.watchOrders(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const SizedBox.shrink();
+            final periodOrders = snapshot.data!.where((o) {
+              return !o.scheduledFor.isBefore(from) &&
+                  !o.scheduledFor.isAfter(endOfDay);
+            }).toList();
+
+            final paidTotal = periodOrders
+                .where((o) => o.isPaid)
+                .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+            final pendingTotal = periodOrders
+                .where((o) => !o.isPaid)
+                .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+            final completedCount = periodOrders
+                .where((o) => o.status == OrderStatus.completato)
+                .length;
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'RIEPILOGO INCASSI PERIODO',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.brickBrownDark,
+                      ),
+                    ),
+                    const Divider(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Incassato confermato:'),
+                        Text(
+                          '€ ${paidTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: AppTheme.paidGreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('In sospeso (non completati):'),
+                        Text(
+                          '€ ${pendingTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.ovenOrangeAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Ordini completati:'),
+                        Text(
+                          '$completedCount su ${periodOrders.length}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+
+        // Compensi Rider 1 e Rider 2
         FutureBuilder<List<RiderCompensationSummary>>(
           future: Future.wait([
             SupabaseService.instance.calculateRiderCompensation(
@@ -164,8 +250,16 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
   }
 }
 
-class _MenuManagerTab extends StatelessWidget {
+class _MenuManagerTab extends StatefulWidget {
   const _MenuManagerTab();
+
+  @override
+  State<_MenuManagerTab> createState() => _MenuManagerTabState();
+}
+
+class _MenuManagerTabState extends State<_MenuManagerTab> {
+  String _search = '';
+  String _filter = 'tutti';
 
   Future<void> _editMenuItemDialog(
       BuildContext context, MenuItemModel item) async {
@@ -238,42 +332,95 @@ class _MenuManagerTab extends StatelessWidget {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final items = snapshot.data!;
-        return ListView.separated(
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return ListTile(
-              title: Text(
-                item.name,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  decoration:
-                  item.available ? null : TextDecoration.lineThrough,
+        final items = snapshot.data!.where((item) {
+          if (_filter == 'da_confermare' && item.priceConfirmed) return false;
+          if (_filter == 'non_disponibili' && item.available) return false;
+          if (_search.isNotEmpty &&
+              !item.name.toLowerCase().contains(_search.toLowerCase())) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+              child: TextField(
+                onChanged: (v) => setState(() => _search = v),
+                decoration: const InputDecoration(
+                  hintText: 'Cerca prodotto nel listino...',
+                  prefixIcon: Icon(Icons.search),
                 ),
               ),
-              subtitle: Text(
-                'Categoria: ${item.category}${!item.priceConfirmed ? " • DA CONFERMARE" : ""}',
-                style: TextStyle(
-                  color: !item.priceConfirmed
-                      ? AppTheme.delayAlertRed
-                      : AppTheme.textMutedBrown,
-                ),
+            ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  for (final opt in [
+                    ('tutti', 'Tutti'),
+                    ('da_confermare', 'Prezzi da confermare'),
+                    ('non_disponibili', 'Non disponibili'),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(opt.$2),
+                        selected: _filter == opt.$1,
+                        selectedColor: AppTheme.terracottaPrimary,
+                        labelStyle: TextStyle(
+                          color: _filter == opt.$1
+                              ? Colors.white
+                              : AppTheme.textDarkBrown,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        onSelected: (_) => setState(() => _filter = opt.$1),
+                      ),
+                    ),
+                ],
               ),
-              trailing: Text(
-                item.price != null
-                    ? '€ ${item.price!.toStringAsFixed(2)}'
-                    : 'Da confermare',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: AppTheme.terracottaPrimary,
-                ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return ListTile(
+                    title: Text(
+                      item.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        decoration:
+                        item.available ? null : TextDecoration.lineThrough,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Categoria: ${item.category}${!item.priceConfirmed ? " • DA CONFERMARE" : ""}',
+                      style: TextStyle(
+                        color: !item.priceConfirmed
+                            ? AppTheme.delayAlertRed
+                            : AppTheme.textMutedBrown,
+                      ),
+                    ),
+                    trailing: Text(
+                      item.price != null
+                          ? '€ ${item.price!.toStringAsFixed(2)}'
+                          : 'Da confermare',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: AppTheme.terracottaPrimary,
+                      ),
+                    ),
+                    onTap: () => _editMenuItemDialog(context, item),
+                  );
+                },
               ),
-              onTap: () => _editMenuItemDialog(context, item),
-            );
-          },
+            ),
+          ],
         );
       },
     );

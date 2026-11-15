@@ -74,6 +74,18 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
     }
   }
 
+  String _subtitleForRole(UserRole role) {
+    switch (role) {
+      case UserRole.titolare:
+        return 'Agenda, incassi e listino';
+      case UserRole.dipendente:
+        return 'Comande e preparazione';
+      case UserRole.rider1:
+      case UserRole.rider2:
+        return 'Consegne e cassa turno';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -81,41 +93,67 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 460),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppTheme.warmSurface,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppTheme.cardBorder, width: 2),
-                    ),
-                    child: const Icon(
-                      Icons.local_fire_department,
-                      size: 48,
-                      color: AppTheme.terracottaPrimary,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.warmSurface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppTheme.cardBorder, width: 2),
+                        ),
+                        child: const Icon(
+                          Icons.local_fire_department,
+                          size: 34,
+                          color: AppTheme.terracottaPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PIZZERIA CENTRALE',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.brickBrownDark,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                          Text(
+                            'Accesso rapido postazione',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textMutedBrown,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '1. CHI STA ACCEDENDO?',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textMutedBrown,
+                        letterSpacing: 0.6,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'GESTIONE PIZZERIA',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.brickBrownDark,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Seleziona il profilo e digita il PIN a 4 cifre',
-                    style: TextStyle(color: AppTheme.textMutedBrown),
-                  ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
 
                   // Griglia selezione profilo
                   GridView.count(
@@ -124,7 +162,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                     physics: const NeverScrollableScrollPhysics(),
                     mainAxisSpacing: 10,
                     crossAxisSpacing: 10,
-                    childAspectRatio: 2.5,
+                    childAspectRatio: 2.15,
                     children: UserRole.values.map((role) {
                       final selected = _selectedRole == role;
                       return InkWell(
@@ -133,42 +171,61 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                           _pin = '';
                           _errorMessage = null;
                         }),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
+                        borderRadius: BorderRadius.circular(14),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
                           decoration: BoxDecoration(
                             color: selected
                                 ? AppTheme.terracottaPrimary
                                 : AppTheme.warmSurface,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: selected
                                   ? AppTheme.brickBrownDark
                                   : AppTheme.cardBorder,
-                              width: 1.5,
+                              width: selected ? 2 : 1.2,
                             ),
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
                           child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
                                 _iconForRole(role),
+                                size: 26,
                                 color: selected
                                     ? Colors.white
                                     : AppTheme.terracottaPrimary,
                               ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  role.label,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                    color: selected
-                                        ? Colors.white
-                                        : AppTheme.textDarkBrown,
-                                  ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      role.label,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                        color: selected
+                                            ? Colors.white
+                                            : AppTheme.textDarkBrown,
+                                      ),
+                                    ),
+                                    Text(
+                                      _subtitleForRole(role),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: selected
+                                            ? Colors.white70
+                                            : AppTheme.textMutedBrown,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -178,45 +235,75 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                     }).toList(),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
-                  // Indicatori 4 pallini PIN
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '2. DIGITA IL PIN (4 CIFRE)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textMutedBrown,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 4 caselle PIN visive
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(4, (index) {
                       final filled = index < _pin.length;
                       return Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 10),
-                        width: 20,
-                        height: 20,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        width: 48,
+                        height: 52,
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
                           color: filled
                               ? AppTheme.terracottaPrimary
-                              : Colors.transparent,
+                              : AppTheme.warmSurface,
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppTheme.terracottaPrimary,
-                            width: 2,
+                            color: filled
+                                ? AppTheme.brickBrownDark
+                                : AppTheme.cardBorder,
+                            width: 1.8,
                           ),
+                        ),
+                        child: Center(
+                          child: filled
+                              ? const Icon(Icons.circle,
+                              size: 14, color: Colors.white)
+                              : null,
                         ),
                       );
                     }),
                   ),
 
                   if (_errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _errorMessage!,
-                      style: const TextStyle(
-                        color: AppTheme.delayAlertRed,
-                        fontWeight: FontWeight.bold,
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEBEE),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          color: AppTheme.delayAlertRed,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ],
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
 
-                  // Tastierino numerico grande
                   if (_isLoading)
                     const Padding(
                       padding: EdgeInsets.all(32),
@@ -248,24 +335,29 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: row.map((key) {
+              final isAction = key == 'C' || key == '<';
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SizedBox(
-                  width: 82,
-                  height: 64,
+                  width: 86,
+                  height: 62,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: key == 'C' || key == '<'
+                      backgroundColor: isAction
                           ? AppTheme.warmSurface
                           : AppTheme.terracottaPrimary,
-                      foregroundColor: key == 'C' || key == '<'
+                      foregroundColor: isAction
                           ? AppTheme.brickBrownDark
                           : Colors.white,
+                      elevation: 0,
                       side: const BorderSide(color: AppTheme.cardBorder),
                     ),
                     onPressed: () {
                       if (key == 'C') {
-                        setState(() => _pin = '');
+                        setState(() {
+                          _pin = '';
+                          _errorMessage = null;
+                        });
                       } else if (key == '<') {
                         _onBackspace();
                       } else {

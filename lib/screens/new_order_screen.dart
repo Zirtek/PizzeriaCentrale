@@ -18,13 +18,16 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
 
   late DateTime _scheduledDateTime;
   OrderSource _source = OrderSource.diretto;
   DeliveryType _deliveryType = DeliveryType.consegna;
   PaymentMethod _paymentMethod = PaymentMethod.contanti;
   bool _isPaid = false;
-  String? _assignedRider;
+
+  String _selectedCategory = 'tutte';
+  String _searchQuery = '';
 
   final List<OrderLineItem> _cart = [];
   bool _isSaving = false;
@@ -48,25 +51,38 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
     _notesCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
   double get _cartTotal =>
       _cart.fold<double>(0.0, (sum, item) => sum + item.subtotal);
 
+  int get _cartItemsCount =>
+      _cart.fold<int>(0, (sum, item) => sum + item.quantity);
+
+  void _setQuickMinutesFromNow(int minutes) {
+    final target = DateTime.now().add(Duration(minutes: minutes));
+    setState(() {
+      _scheduledDateTime = DateTime(
+        widget.initialDate.year,
+        widget.initialDate.month,
+        widget.initialDate.day,
+        target.hour,
+        target.minute,
+      );
+    });
+  }
+
   void _onSourceChanged(OrderSource newSource) {
     setState(() {
       _source = newSource;
       if (newSource == OrderSource.banco) {
         _deliveryType = DeliveryType.ritiro;
-        _assignedRider = null;
       } else if (newSource == OrderSource.justEat ||
           newSource == OrderSource.glovo ||
           newSource == OrderSource.deliveroo) {
         _deliveryType = DeliveryType.consegna;
-        if (newSource.isExternalCourier) {
-          _assignedRider = null;
-        }
         if (newSource != OrderSource.diretto) {
           _paymentMethod = PaymentMethod.online;
           _isPaid = true;
@@ -102,11 +118,74 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     });
   }
 
+  void _quickAddItem(MenuItemModel item) {
+    if (!item.priceConfirmed || item.price == null) {
+      _addMenuItemDialog(item);
+      return;
+    }
+    setState(() {
+      final existingIndex = _cart.indexWhere(
+            (c) =>
+        c.name == item.name &&
+            c.addedIngredients.isEmpty &&
+            c.removedIngredients.isEmpty &&
+            c.notes.isEmpty,
+      );
+      if (existingIndex != -1) {
+        final existing = _cart[existingIndex];
+        _cart[existingIndex] = OrderLineItem(
+          name: existing.name,
+          category: existing.category,
+          quantity: existing.quantity + 1,
+          unitPrice: existing.unitPrice,
+        );
+      } else {
+        _cart.add(
+          OrderLineItem(
+            name: item.name,
+            category: item.category,
+            quantity: 1,
+            unitPrice: item.price!,
+          ),
+        );
+      }
+    });
+  }
+
+  void _decrementSimpleItem(String itemName) {
+    final idx = _cart.lastIndexWhere((c) => c.name == itemName);
+    if (idx == -1) return;
+    setState(() {
+      final current = _cart[idx];
+      if (current.quantity > 1) {
+        _cart[idx] = OrderLineItem(
+          name: current.name,
+          category: current.category,
+          quantity: current.quantity - 1,
+          unitPrice: current.unitPrice,
+          addedIngredients: current.addedIngredients,
+          removedIngredients: current.removedIngredients,
+          notes: current.notes,
+        );
+      } else {
+        _cart.removeAt(idx);
+      }
+    });
+  }
+
+  int _countInCart(String itemName) {
+    return _cart
+        .where((c) => c.name == itemName)
+        .fold<int>(0, (sum, c) => sum + c.quantity);
+  }
+
   Future<void> _openTegliaBuilder(List<MenuItemModel> menu) async {
-    final simpleFlavors =
-    menu.where((m) => m.category == 'teglia_gusto_semplice' && m.available).toList();
-    final specialFlavors =
-    menu.where((m) => m.category == 'teglia_gusto_speciale' && m.available).toList();
+    final simpleFlavors = menu
+        .where((m) => m.category == 'teglia_gusto_semplice' && m.available)
+        .toList();
+    final specialFlavors = menu
+        .where((m) => m.category == 'teglia_gusto_speciale' && m.available)
+        .toList();
 
     bool isMezza = false;
     final selected = <MenuItemModel>[];
@@ -168,7 +247,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Prezzo calcolato: € ${currentPrice.toStringAsFixed(2)} (${selected.length}/${isMezza ? 2 : 4} gusti)',
+                        'Prezzo: € ${currentPrice.toStringAsFixed(2)} (${selected.length}/${isMezza ? 2 : 4} gusti)',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -305,9 +384,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   }
 
   Future<void> _addMenuItemDialog(MenuItemModel item) async {
-    double? chosenPrice = item.price;
     final priceCtrl = TextEditingController(
-      text: chosenPrice != null ? chosenPrice.toStringAsFixed(2) : '',
+      text: item.price != null ? item.price!.toStringAsFixed(2) : '',
     );
     final addCtrl = TextEditingController();
     final remCtrl = TextEditingController();
@@ -319,7 +397,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
           return AlertDialog(
-            title: Text(item.name),
+            title: Text('Personalizza: ${item.name}'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -332,7 +410,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
-                        'Attenzione: prezzo da confermare a listino. Inserisci l\'importo concordato per questo prodotto:',
+                        'Prezzo da confermare a listino. Inserisci l\'importo:',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -355,20 +433,23 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
+                        icon: const Icon(Icons.remove_circle_outline, size: 28),
                         onPressed: qty > 1
                             ? () => setDlgState(() => qty--)
                             : null,
                       ),
-                      Text(
-                        '$qty',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '$qty',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
+                        icon: const Icon(Icons.add_circle_outline, size: 28),
                         onPressed: () => setDlgState(() => qty++),
                       ),
                     ],
@@ -376,14 +457,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   TextField(
                     controller: addCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Aggiungi ingredienti (separati da virgola)',
+                      labelText: 'Aggiungi (+ ingredienti, separati da virgola)',
                     ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: remCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Togli ingredienti (separati da virgola)',
+                      labelText: 'Togli (- ingredienti, separati da virgola)',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -409,7 +490,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   if (parsedPrice == null || parsedPrice <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Inserisci un prezzo valido maggiore di 0'),
+                        content:
+                        Text('Inserisci un prezzo valido maggiore di 0'),
                       ),
                     );
                     return;
@@ -446,6 +528,99 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     );
   }
 
+  void _openCartSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.backgroundWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Carrello ($_cartItemsCount articoli)',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.brickBrownDark,
+                      ),
+                    ),
+                    Text(
+                      '€ ${_cartTotal.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.terracottaPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                if (_cart.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text('Il carrello è vuoto.')),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _cart.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, idx) {
+                        final item = _cart[idx];
+                        final details = [
+                          ...item.addedIngredients.map((e) => '+$e'),
+                          ...item.removedIngredients.map((e) => '-$e'),
+                          if (item.notes.isNotEmpty) item.notes,
+                        ].join(', ');
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            '${item.quantity}x ${item.name}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle:
+                          details.isNotEmpty ? Text(details) : null,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '€ ${item.subtotal.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    color: AppTheme.delayAlertRed),
+                                onPressed: () {
+                                  setState(() => _cart.removeAt(idx));
+                                  setSheetState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _saveOrder() async {
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -457,13 +632,15 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
         _addressCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Inserisci l\'indirizzo per la consegna a domicilio')),
+            content:
+            Text('Inserisci l\'indirizzo per la consegna a domicilio')),
       );
       return;
     }
     if (_cart.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Aggiungi almeno un prodotto all\'ordine')),
+        const SnackBar(
+            content: Text('Aggiungi almeno un prodotto all\'ordine')),
       );
       return;
     }
@@ -479,7 +656,6 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
         source: _source,
         items: _cart,
         notes: _notesCtrl.text,
-        assignedRider: _assignedRider,
         totalAmount: _cartTotal,
         paymentMethod: _paymentMethod,
         isPaid: _isPaid,
@@ -498,24 +674,128 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final formattedDateTime =
-    DateFormat('dd/MM/yyyy • HH:mm').format(_scheduledDateTime);
+    final formattedTime = DateFormat('HH:mm').format(_scheduledDateTime);
+    final formattedDate = DateFormat('dd/MM').format(_scheduledDateTime);
+
+    const categories = [
+      ('tutte', 'Tutti'),
+      ('pizza_tonda', 'Pizze Tonde'),
+      ('fritti', 'Fritti'),
+      ('bevande', 'Bevande'),
+      ('speciale_giorno', 'Speciali Mar/Mer'),
+    ];
 
     return Scaffold(
       appBar: AppBar(title: const Text('Nuovo Ordine Veloce')),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+        decoration: const BoxDecoration(
+          color: AppTheme.warmSurface,
+          border: Border(top: BorderSide(color: AppTheme.cardBorder, width: 1.5)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Row(
+            children: [
+              InkWell(
+                onTap: _openCartSheet,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.backgroundWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.shopping_bag_outlined,
+                          color: AppTheme.terracottaPrimary),
+                      const SizedBox(width: 6),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$_cartItemsCount pz • Vedi',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textMutedBrown,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '€ ${_cartTotal.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.brickBrownDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 54,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSaving ? null : _saveOrder,
+                    icon: _isSaving
+                        ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                        : const Icon(Icons.check_circle_outline),
+                    label: Text(
+                      _isSaving ? 'SALVATAGGIO...' : 'SALVA ORDINE',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
       body: StreamBuilder<List<MenuItemModel>>(
         stream: SupabaseService.instance.watchMenu(),
         builder: (context, snapshot) {
           final menu = snapshot.data ?? [];
 
+          final productList = menu.where((m) {
+            if (m.category == 'teglia_gusto_semplice' ||
+                m.category == 'teglia_gusto_speciale') {
+              return false;
+            }
+            if (_selectedCategory != 'tutte' &&
+                m.category != _selectedCategory) {
+              return false;
+            }
+            if (_searchQuery.isNotEmpty &&
+                !m.name.toLowerCase().contains(_searchQuery.toLowerCase())) {
+              return false;
+            }
+            return true;
+          }).toList();
+
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
             children: [
-              // 1. Provenienza Ordine
+              // 1. Provenienza e tipo consegna
               const Text(
-                '1. PROVENIENZA E TIPO',
+                '1. PROVENIENZA E SERVIZIO',
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
                   color: AppTheme.brickBrownDark,
                 ),
               ),
@@ -537,8 +817,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   );
                 }).toList(),
               ),
-              const SizedBox(height: 10),
-              if (_source == OrderSource.diretto)
+              if (_source == OrderSource.diretto) ...[
+                const SizedBox(height: 10),
                 SegmentedButton<DeliveryType>(
                   segments: const [
                     ButtonSegment(
@@ -556,33 +836,68 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   onSelectionChanged: (val) =>
                       setState(() => _deliveryType = val.first),
                 ),
+              ],
 
               const SizedBox(height: 18),
 
-              // 2. Orario e Dati Cliente
+              // 2. Orario rapido + Dati cliente
               const Text(
-                '2. ORARIO RICHIESTO E CLIENTE',
+                '2. ORARIO E CLIENTE',
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
                   color: AppTheme.brickBrownDark,
                 ),
               ),
               const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _pickScheduledDateTime,
-                icon: const Icon(Icons.access_time),
-                label: Text('Giorno e Ora: $formattedDateTime'),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ActionChip(
+                      avatar: const Icon(Icons.access_time,
+                          size: 16, color: Colors.white),
+                      label: Text(
+                        '$formattedDate • $formattedTime',
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      backgroundColor: AppTheme.brickBrownDark,
+                      onPressed: _pickScheduledDateTime,
+                    ),
+                    const SizedBox(width: 6),
+                    for (final mins in [15, 30, 45, 60])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          label: Text('+$mins min'),
+                          onPressed: () => _setQuickMinutesFromNow(mins),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
-              TextField(
-                controller: _nameCtrl,
-                decoration: const InputDecoration(labelText: 'Nome cliente *'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Telefono'),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: _nameCtrl,
+                      decoration:
+                      const InputDecoration(labelText: 'Nome cliente *'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: _phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(labelText: 'Telefono'),
+                    ),
+                  ),
+                ],
               ),
               if (_deliveryType == DeliveryType.consegna) ...[
                 const SizedBox(height: 10),
@@ -590,137 +905,154 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   controller: _addressCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Indirizzo di consegna *',
+                    prefixIcon: Icon(Icons.location_on_outlined),
                   ),
                 ),
               ],
 
               const SizedBox(height: 18),
 
-              // 3. Prodotti
+              // 3. Prodotti con ricerca, filtri categoria e aggiunta 1-tap
               const Text(
-                '3. PRODOTTI',
+                '3. PRODOTTI (TOCCA + PER AGGIUNGERE SUBITO)',
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
                   color: AppTheme.brickBrownDark,
                 ),
               ),
               const SizedBox(height: 8),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.ovenOrangeAccent,
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.ovenOrangeAccent,
+                  ),
+                  onPressed:
+                  menu.isEmpty ? null : () => _openTegliaBuilder(menu),
+                  icon: const Icon(Icons.crop_square_rounded),
+                  label: const Text('COMPONI TEGLIA / MEZZA TEGLIA'),
                 ),
-                onPressed: menu.isEmpty ? null : () => _openTegliaBuilder(menu),
-                icon: const Icon(Icons.crop_square_rounded),
-                label: const Text('AGGIUNGI TEGLIA / MEZZA TEGLIA'),
               ),
               const SizedBox(height: 10),
-              _buildCategorySection('Pizze Tonde', menu, 'pizza_tonda'),
-              _buildCategorySection('Fritti', menu, 'fritti'),
-              _buildCategorySection('Bevande', menu, 'bevande'),
-              _buildCategorySection(
-                'Speciali del Giorno (Solo Mar/Mer)',
-                menu,
-                'speciale_giorno',
+              TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _searchQuery = v),
+                decoration: InputDecoration(
+                  hintText: 'Cerca pizza, fritto o bevanda...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchCtrl.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  )
+                      : null,
+                ),
               ),
-
-              // Carrello corrente
-              if (_cart.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'RIEPILOGO ORDINE',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.brickBrownDark,
-                          ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: categories.map((cat) {
+                    final sel = _selectedCategory == cat.$1;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(cat.$2),
+                        selected: sel,
+                        selectedColor: AppTheme.terracottaPrimary,
+                        labelStyle: TextStyle(
+                          color: sel ? Colors.white : AppTheme.textDarkBrown,
+                          fontWeight: FontWeight.bold,
                         ),
-                        const Divider(),
-                        ..._cart.asMap().entries.map((entry) {
-                          final idx = entry.key;
-                          final item = entry.value;
-                          return ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              '${item.quantity}x ${item.name}',
-                              style:
-                              const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text(
-                              [
-                                ...item.addedIngredients.map((e) => '+$e'),
-                                ...item.removedIngredients.map((e) => '-$e'),
-                                if (item.notes.isNotEmpty) item.notes,
-                              ].join(', '),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '€ ${item.subtotal.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.close,
-                                      color: AppTheme.delayAlertRed),
-                                  onPressed: () =>
-                                      setState(() => _cart.removeAt(idx)),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                        const Divider(),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            'TOTALE: € ${_cartTotal.toStringAsFixed(2)}',
+                        onSelected: (_) =>
+                            setState(() => _selectedCategory = cat.$1),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              ...productList.map((item) {
+                final isAvailable = item.isAvailableOnDate(_scheduledDateTime);
+                final qtyInCart = _countInCart(item.name);
+                final priceText = item.price == null
+                    ? 'Da confermare'
+                    : (!item.priceConfirmed
+                    ? '€ ${item.price!.toStringAsFixed(2)} (?)'
+                    : '€ ${item.price!.toStringAsFixed(2)}');
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    enabled: isAvailable,
+                    onTap:
+                    isAvailable ? () => _addMenuItemDialog(item) : null,
+                    title: Text(
+                      item.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      !isAvailable
+                          ? 'Disponibile solo Martedì e Mercoledì'
+                          : '$priceText • Tocca per varianti/note',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: !isAvailable
+                            ? AppTheme.delayAlertRed
+                            : AppTheme.textMutedBrown,
+                      ),
+                    ),
+                    trailing: !isAvailable
+                        ? null
+                        : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (qtyInCart > 0) ...[
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline,
+                                color: AppTheme.brickBrownDark),
+                            onPressed: () =>
+                                _decrementSimpleItem(item.name),
+                          ),
+                          Text(
+                            '$qtyInCart',
                             style: const TextStyle(
-                              fontSize: 20,
                               fontWeight: FontWeight.w900,
+                              fontSize: 16,
                               color: AppTheme.terracottaPrimary,
                             ),
                           ),
+                        ],
+                        IconButton(
+                          tooltip: 'Aggiungi subito 1',
+                          icon: const Icon(Icons.add_circle,
+                              size: 30,
+                              color: AppTheme.terracottaPrimary),
+                          onPressed: () => _quickAddItem(item),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                );
+              }),
 
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
 
-              // 4. Rider, Pagamento e Note
+              // 4. Pagamento e Note
               const Text(
-                '4. PAGAMENTO E CONSEGNA',
+                '4. PAGAMENTO E NOTE',
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
                   color: AppTheme.brickBrownDark,
                 ),
               ),
               const SizedBox(height: 8),
-              if (_deliveryType == DeliveryType.consegna &&
-                  _source.usesInternalRiders) ...[
-                DropdownButtonFormField<String?>(
-                  value: _assignedRider,
-                  decoration: const InputDecoration(
-                    labelText: 'Rider assegnato (opzionale ora)',
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Non assegnato')),
-                    DropdownMenuItem(value: 'rider_1', child: Text('Rider 1')),
-                    DropdownMenuItem(value: 'rider_2', child: Text('Rider 2')),
-                  ],
-                  onChanged: (v) => setState(() => _assignedRider = v),
-                ),
-                const SizedBox(height: 10),
-              ],
               DropdownButtonFormField<PaymentMethod>(
                 value: _paymentMethod,
                 decoration:
@@ -735,6 +1067,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 },
               ),
               SwitchListTile(
+                contentPadding: EdgeInsets.zero,
                 title: const Text(
                   'Già pagato dal cliente',
                   style: TextStyle(fontWeight: FontWeight.bold),
@@ -742,7 +1075,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 subtitle: Text(
                   _isPaid
                       ? 'Il rider NON deve incassare'
-                      : 'Da incassare alla consegna / al banco',
+                      : 'Da incassare (verrà conteggiato al completamento)',
                 ),
                 value: _isPaid,
                 activeColor: AppTheme.paidGreen,
@@ -753,73 +1086,10 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 decoration:
                 const InputDecoration(labelText: 'Note aggiuntive ordine'),
               ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveOrder,
-                  child: _isSaving
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(
-                    'SALVA ORDINE • € ${_cartTotal.toStringAsFixed(2)}',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
             ],
           );
         },
       ),
-    );
-  }
-
-  Widget _buildCategorySection(
-      String title,
-      List<MenuItemModel> menu,
-      String category,
-      ) {
-    final items = menu.where((m) => m.category == category).toList();
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    return ExpansionTile(
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          color: AppTheme.brickBrownDark,
-        ),
-      ),
-      children: items.map((item) {
-        final isAvailableForOrderDay = item.isAvailableOnDate(_scheduledDateTime);
-        final priceText = item.price == null
-            ? 'Da confermare'
-            : (!item.priceConfirmed
-            ? '€ ${item.price!.toStringAsFixed(2)} (?)'
-            : '€ ${item.price!.toStringAsFixed(2)}');
-
-        return ListTile(
-          enabled: isAvailableForOrderDay,
-          title: Text(item.name),
-          subtitle: !isAvailableForOrderDay
-              ? const Text(
-            'Disponibile solo Martedì e Mercoledì',
-            style: TextStyle(color: AppTheme.delayAlertRed),
-          )
-              : null,
-          trailing: Text(
-            priceText,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: item.priceConfirmed
-                  ? AppTheme.terracottaPrimary
-                  : AppTheme.ovenOrangeAccent,
-            ),
-          ),
-          onTap: isAvailableForOrderDay ? () => _addMenuItemDialog(item) : null,
-        );
-      }).toList(),
     );
   }
 }

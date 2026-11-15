@@ -8,7 +8,6 @@ class SupabaseService {
 
   final SupabaseClient _client = Supabase.instance.client;
 
-  /// Verifica sicura del PIN tramite RPC PostgreSQL (nessun PIN in chiaro)
   Future<AppUserSession?> loginWithPin(UserRole role, String pin) async {
     final response = await _client.rpc(
       'verify_pizzeria_pin',
@@ -33,7 +32,6 @@ class SupabaseService {
     );
   }
 
-  /// Stream in tempo reale di tutti gli ordini
   Stream<List<PizzeriaOrder>> watchOrders() {
     return _client
         .from('pizzeria_orders')
@@ -42,7 +40,6 @@ class SupabaseService {
         .map((rows) => rows.map((r) => PizzeriaOrder.fromJson(r)).toList());
   }
 
-  /// Stream in tempo reale del menu
   Stream<List<MenuItemModel>> watchMenu() {
     return _client
         .from('pizzeria_menu')
@@ -51,6 +48,7 @@ class SupabaseService {
         .map((rows) => rows.map((r) => MenuItemModel.fromJson(r)).toList());
   }
 
+  /// Crea l'ordine nello stato "nuovo_ordine" senza rider assegnato
   Future<void> createOrder({
     required DateTime scheduledFor,
     required String customerName,
@@ -60,17 +58,10 @@ class SupabaseService {
     required OrderSource source,
     required List<OrderLineItem> items,
     required String notes,
-    required String? assignedRider,
     required double totalAmount,
     required PaymentMethod paymentMethod,
     required bool isPaid,
   }) async {
-    // Glovo, Deliveroo e Banco non possono mai avere un rider interno assegnato
-    final String? safeRider =
-    (deliveryType == DeliveryType.consegna && source.usesInternalRiders)
-        ? assignedRider
-        : null;
-
     await _client.from('pizzeria_orders').insert({
       'scheduled_for': scheduledFor.toUtc().toIso8601String(),
       'customer_name': customerName.trim(),
@@ -81,7 +72,7 @@ class SupabaseService {
       'source': source.dbValue,
       'items': items.map((e) => e.toJson()).toList(),
       'notes': notes.trim(),
-      'assigned_rider': safeRider,
+      'assigned_rider': null,
       'total_amount': totalAmount,
       'payment_method': paymentMethod.dbValue,
       'is_paid': isPaid,
@@ -89,21 +80,50 @@ class SupabaseService {
     });
   }
 
-  Future<void> updateOrderStatus(String orderId, OrderStatus newStatus) async {
+  /// Il rider può prendere in carico SOLO se l'ordine è già stato segnato PRONTO
+  Future<bool> claimDelivery(String orderId, String riderRole) async {
+    final updated = await _client
+        .from('pizzeria_orders')
+        .update({
+      'assigned_rider': riderRole,
+      'status': OrderStatus.inConsegna.dbValue,
+    })
+        .eq('id', orderId)
+        .eq('status', OrderStatus.pronto.dbValue)
+        .isFilter('assigned_rider', null)
+        .select('id');
+
+    return (updated as List).isNotEmpty;
+  }
+
+  /// Rimette la consegna tra quelle pronte disponibili (in caso di errore)
+  Future<void> releaseDelivery(String orderId) async {
+    await _client
+        .from('pizzeria_orders')
+        .update({
+      'assigned_rider': null,
+      'status': OrderStatus.pronto.dbValue,
+    })
+        .eq('id', orderId);
+  }
+
+  /// Aggiorna stato ordine: quando diventa COMPLETATO segna automaticamente is_paid = true
+  Future<void> updateOrderStatus(
+      String orderId,
+      OrderStatus newStatus, {
+        PaymentMethod? paymentMethod,
+      }) async {
     final updateData = <String, dynamic>{
       'status': newStatus.dbValue,
     };
     if (newStatus == OrderStatus.completato) {
       updateData['completed_at'] = DateTime.now().toUtc().toIso8601String();
+      updateData['is_paid'] = true;
+      if (paymentMethod != null) {
+        updateData['payment_method'] = paymentMethod.dbValue;
+      }
     }
     await _client.from('pizzeria_orders').update(updateData).eq('id', orderId);
-  }
-
-  Future<void> assignRider(String orderId, String? riderRole) async {
-    await _client
-        .from('pizzeria_orders')
-        .update({'assigned_rider': riderRole})
-        .eq('id', orderId);
   }
 
   Future<void> toggleOrderPaid(String orderId, bool isPaid) async {
@@ -117,7 +137,6 @@ class SupabaseService {
     await _client.from('pizzeria_orders').delete().eq('id', orderId);
   }
 
-  /// Aggiornamento menu dal Titolare
   Future<void> updateMenuItem({
     required String id,
     required double? price,
@@ -132,7 +151,6 @@ class SupabaseService {
     }).eq('id', id);
   }
 
-  /// Registra il turno giornaliero del rider (idempotente grazie a UNIQUE(rider_role, shift_date))
   Future<void> registerRiderShift(String riderRole, DateTime date) async {
     final dateStr = DateFormat('yyyy-MM-dd').format(date);
     await _client.from('pizzeria_rider_shifts').upsert(
@@ -154,7 +172,6 @@ class SupabaseService {
     return (res as List).isNotEmpty;
   }
 
-  /// Calcolo automatico compensi rider (Lun-Ven: 15€ + 2€/cons | Sab-Dom: 18€ + 2€/cons)
   Future<RiderCompensationSummary> calculateRiderCompensation({
     required String riderRole,
     required String riderName,
@@ -167,7 +184,6 @@ class SupabaseService {
     final fromStr = DateFormat('yyyy-MM-dd').format(startDay);
     final toStr = DateFormat('yyyy-MM-dd').format(endDay);
 
-    // 1. Recupera i giorni di turno lavorati nel periodo
     final shiftsRes = await _client
         .from('pizzeria_rider_shifts')
         .select('shift_date')
@@ -186,14 +202,14 @@ class SupabaseService {
       baseFees += isWeekend ? 18.0 : 15.0;
     }
 
-    // 2. Recupera le consegne completate (solo Diretto e Just Eat, conteggiate una sola volta)
     final ordersRes = await _client
         .from('pizzeria_orders')
         .select()
         .eq('assigned_rider', riderRole)
         .eq('status', OrderStatus.completato.dbValue)
         .eq('delivery_type', DeliveryType.consegna.dbValue)
-        .inFilter('source', [OrderSource.diretto.dbValue, OrderSource.justEat.dbValue])
+        .inFilter(
+        'source', [OrderSource.diretto.dbValue, OrderSource.justEat.dbValue])
         .gte('scheduled_for', startDay.toUtc().toIso8601String())
         .lte('scheduled_for', endDay.toUtc().toIso8601String());
 
