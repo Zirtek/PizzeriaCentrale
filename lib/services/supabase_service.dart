@@ -137,6 +137,24 @@ class SupabaseService {
     await _client.from('pizzeria_orders').delete().eq('id', orderId);
   }
 
+  /// Aggiunge un nuovo prodotto al listino
+  Future<void> addMenuItem({
+    required String category,
+    required String name,
+    required double? price,
+    required bool priceConfirmed,
+    required bool available,
+  }) async {
+    await _client.from('pizzeria_menu').insert({
+      'category': category,
+      'name': name.trim(),
+      'price': price,
+      'price_confirmed': priceConfirmed,
+      'available': available,
+      'sort_order': 999,
+    });
+  }
+
   Future<void> updateMenuItem({
     required String id,
     required double? price,

@@ -95,7 +95,7 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
         ),
         const SizedBox(height: 16),
 
-        // Riepilogo Incassi del periodo selezionato (Conti soldi verdi)
+        // Riepilogo Incassi del periodo selezionato
         StreamBuilder<List<PizzeriaOrder>>(
           stream: SupabaseService.instance.watchOrders(),
           builder: (context, snapshot) {
@@ -181,7 +181,7 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
           },
         ),
 
-        // Compensi Rider 1 e Rider 2 (Totali in verde)
+        // Compensi Rider 1 e Rider 2
         FutureBuilder<List<RiderCompensationSummary>>(
           future: Future.wait([
             SupabaseService.instance.calculateRiderCompensation(
@@ -265,6 +265,122 @@ class _MenuManagerTab extends StatefulWidget {
 class _MenuManagerTabState extends State<_MenuManagerTab> {
   String _search = '';
   String _filter = 'tutti';
+
+  static const _menuCategories = [
+    ('pizza_tonda', 'Pizze Tonde'),
+    ('fritti', 'Fritti'),
+    ('bevande', 'Bevande'),
+    ('speciale_giorno', 'Speciali Mar/Mer'),
+    ('teglia_gusto_semplice', 'Teglia - Gusto Semplice'),
+    ('teglia_gusto_speciale', 'Teglia - Gusto Speciale'),
+  ];
+
+  Future<void> _addNewMenuItemDialog(BuildContext context) async {
+    final nameCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
+    String selectedCategory = 'bevande';
+    bool confirmed = true;
+    bool available = true;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          return AlertDialog(
+            title: const Text('Nuovo Prodotto a Listino'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    decoration: const InputDecoration(labelText: 'Categoria'),
+                    items: _menuCategories
+                        .map((c) => DropdownMenuItem(
+                      value: c.$1,
+                      child: Text(c.$2),
+                    ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setDlgState(() => selectedCategory = v);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nome prodotto * (es. Coca Cola lattina)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Prezzo (€) (es. 2.50)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Prezzo confermato definitivo'),
+                    value: confirmed,
+                    activeColor: AppTheme.moneyGreen,
+                    onChanged: (v) => setDlgState(() => confirmed = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Prodotto disponibile'),
+                    value: available,
+                    activeColor: AppTheme.moneyGreen,
+                    onChanged: (v) => setDlgState(() => available = v),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Annulla'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Inserisci il nome del prodotto'),
+                      ),
+                    );
+                    return;
+                  }
+                  final parsedPrice = double.tryParse(
+                    priceCtrl.text.replaceAll(',', '.'),
+                  );
+                  await SupabaseService.instance.addMenuItem(
+                    category: selectedCategory,
+                    name: nameCtrl.text,
+                    price: parsedPrice,
+                    priceConfirmed: confirmed,
+                    available: available,
+                  );
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Aggiunto: ${nameCtrl.text.trim()}'),
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Aggiungi'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   Future<void> _editMenuItemDialog(
       BuildContext context, MenuItemModel item) async {
@@ -353,6 +469,17 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _addNewMenuItemDialog(context),
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('NUOVO PRODOTTO'),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
               child: TextField(
                 onChanged: (v) => setState(() => _search = v),
                 decoration: const InputDecoration(

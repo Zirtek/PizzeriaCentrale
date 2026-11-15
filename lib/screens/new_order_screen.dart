@@ -14,6 +14,20 @@ class NewOrderScreen extends StatefulWidget {
 }
 
 class _NewOrderScreenState extends State<NewOrderScreen> {
+  static const List<(int, int)> _timeSlots = [
+    (19, 0),
+    (19, 15),
+    (19, 30),
+    (19, 45),
+    (20, 0),
+    (20, 15),
+    (20, 30),
+    (20, 45),
+    (21, 0),
+    (21, 15),
+    (21, 30),
+  ];
+
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
@@ -35,13 +49,31 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now().add(const Duration(minutes: 30));
+    final now = DateTime.now();
+    final isToday = now.year == widget.initialDate.year &&
+        now.month == widget.initialDate.month &&
+        now.day == widget.initialDate.day;
+
+    int initialHour = 19;
+    int initialMinute = 0;
+
+    if (isToday) {
+      final nowMinutes = now.hour * 60 + now.minute;
+      const startMinutes = 19 * 60; // 19:00
+      const endMinutes = 21 * 60 + 30; // 21:30
+      if (nowMinutes >= startMinutes && nowMinutes < endMinutes) {
+        final nextQuarter = ((nowMinutes ~/ 15) + 1) * 15;
+        initialHour = nextQuarter ~/ 60;
+        initialMinute = nextQuarter % 60;
+      }
+    }
+
     _scheduledDateTime = DateTime(
       widget.initialDate.year,
       widget.initialDate.month,
       widget.initialDate.day,
-      now.hour,
-      now.minute,
+      initialHour,
+      initialMinute,
     );
   }
 
@@ -61,15 +93,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   int get _cartItemsCount =>
       _cart.fold<int>(0, (sum, item) => sum + item.quantity);
 
-  void _setQuickMinutesFromNow(int minutes) {
-    final target = DateTime.now().add(Duration(minutes: minutes));
+  void _selectSlot(int hour, int minute) {
     setState(() {
       _scheduledDateTime = DateTime(
-        widget.initialDate.year,
-        widget.initialDate.month,
-        widget.initialDate.day,
-        target.hour,
-        target.minute,
+        _scheduledDateTime.year,
+        _scheduledDateTime.month,
+        _scheduledDateTime.day,
+        hour,
+        minute,
       );
     });
   }
@@ -847,44 +878,60 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
               const SizedBox(height: 18),
 
-              // 2. Orario rapido + Dati cliente
-              const Text(
-                '2. ORARIO E CLIENTE',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                  color: AppTheme.toCompleteYellow,
-                ),
+              // 2. Orario (19:00 - 21:30 ogni 15 min) + Dati cliente
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '2. ORARIO (19:00 - 21:30) E CLIENTE',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: AppTheme.toCompleteYellow,
+                    ),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.calendar_today,
+                        size: 14, color: AppTheme.toCompleteYellow),
+                    label: Text(
+                      '$formattedDate • $formattedTime',
+                      style: const TextStyle(
+                        color: AppTheme.textWhite,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    backgroundColor: AppTheme.surfaceElevated,
+                    onPressed: _pickScheduledDateTime,
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    ActionChip(
-                      avatar: const Icon(Icons.access_time,
-                          size: 16, color: Colors.black),
-                      label: Text(
-                        '$formattedDate • $formattedTime',
-                        style: const TextStyle(
-                            color: Colors.black, fontWeight: FontWeight.w900),
-                      ),
-                      backgroundColor: AppTheme.toCompleteYellow,
-                      onPressed: _pickScheduledDateTime,
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _timeSlots.map((slot) {
+                  final (hour, minute) = slot;
+                  final label =
+                      '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+                  final isSelected = _scheduledDateTime.hour == hour &&
+                      _scheduledDateTime.minute == minute;
+
+                  return ChoiceChip(
+                    label: Text(label),
+                    selected: isSelected,
+                    selectedColor: AppTheme.toCompleteYellow,
+                    showCheckmark: false,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.black : AppTheme.textWhite,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
                     ),
-                    const SizedBox(width: 6),
-                    for (final mins in [15, 30, 45, 60])
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ActionChip(
-                          label: Text('+$mins min'),
-                          onPressed: () => _setQuickMinutesFromNow(mins),
-                        ),
-                      ),
-                  ],
-                ),
+                    onSelected: (_) => _selectSlot(hour, minute),
+                  );
+                }).toList(),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
