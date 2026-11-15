@@ -242,7 +242,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                 ),
               ),
 
-              // Riepilogo Incassi Titolare (Conti soldi verdi che risaltano)
+              // Riepilogo Incassi Titolare
               if (widget.session.isOwner)
                 Container(
                   width: double.infinity,
@@ -386,7 +386,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                       itemBuilder: (context, index) {
                         return _OrderAgendaCard(
                           order: visibleOrders[index],
-                          isOwner: widget.session.isOwner,
+                          canDeleteOrder: widget.session.isStaffOrOwner,
                         );
                       },
                     );
@@ -442,9 +442,12 @@ class _RevenueMetricTile extends StatelessWidget {
 
 class _OrderAgendaCard extends StatelessWidget {
   final PizzeriaOrder order;
-  final bool isOwner;
+  final bool canDeleteOrder;
 
-  const _OrderAgendaCard({required this.order, required this.isOwner});
+  const _OrderAgendaCard({
+    required this.order,
+    required this.canDeleteOrder,
+  });
 
   List<OrderStatus> _workflowSteps() {
     if (order.deliveryType == DeliveryType.ritiro ||
@@ -546,8 +549,6 @@ class _OrderAgendaCard extends StatelessWidget {
         order.status == OrderStatus.pronto &&
         order.assignedRider == null;
 
-    // Bordo card sincronizzato con stato semantico:
-    // Rosso = da iniziare / in ritardo, Giallo = da completare, Verde = completato
     final borderColor = order.isDelayed
         ? AppTheme.toStartRed
         : order.status.color.withOpacity(0.75);
@@ -941,7 +942,7 @@ class _OrderAgendaCard extends StatelessWidget {
                 ),
               ),
 
-            // Riga finale: Totale (Verde) + Stato Pagamento + Pulsante Stato
+            // Riga finale: Totale + Stato Pagamento + Elimina (Titolare e Dipendente) + Stato
             Row(
               children: [
                 Column(
@@ -995,20 +996,24 @@ class _OrderAgendaCard extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
-                if (isOwner)
+                if (canDeleteOrder)
                   IconButton(
-                    tooltip: 'Elimina ordine',
+                    tooltip: 'Annulla ed elimina ordine',
                     icon: const Icon(Icons.delete_outline,
                         color: AppTheme.toStartRed),
                     onPressed: () async {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
-                          title: Text('Eliminare ordine #${order.orderNumber}?'),
+                          title: Text(
+                              'Annullare ed eliminare ordine #${order.orderNumber}?'),
+                          content: const Text(
+                            'L\'ordine verrà rimosso definitivamente dall\'agenda.',
+                          ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Annulla'),
+                              child: const Text('Indietro'),
                             ),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
@@ -1016,7 +1021,7 @@ class _OrderAgendaCard extends StatelessWidget {
                                 foregroundColor: Colors.white,
                               ),
                               onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Elimina'),
+                              child: const Text('Elimina ordine'),
                             ),
                           ],
                         ),
