@@ -27,6 +27,11 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/logo.png" # Il percorso corretto
-  remove_alpha_ios: true # Indispensabile per iOS
+  image_path: "assets/icon/logo.png"
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/icon/logo.png"
+    background_color: "#EFE5D1"
+    theme_color: "#EFE5D1"
 
