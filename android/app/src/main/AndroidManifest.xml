@@ -10,6 +10,7 @@
             <data android:scheme="tel" />
         </intent>
     </queries>
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <application
         android:label="pizzeria_centrale"
         android:name="${applicationName}"
