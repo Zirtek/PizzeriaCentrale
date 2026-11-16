@@ -136,5 +136,135 @@
       };
     })();
   </script>
+  <script>
+    (function () {
+      let audioCtx = null;
+      let isUnlocked = false;
+
+      function getContext() {
+        if (!audioCtx) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (Ctx) audioCtx = new Ctx();
+        }
+        return audioCtx;
+      }
+
+      function unlockAudio() {
+        const ctx = getContext();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(function () {});
+        }
+        if (!isUnlocked) {
+          try {
+            const buffer = ctx.createBuffer(1, 1, 22050);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+            isUnlocked = true;
+          } catch (_) {}
+        }
+      }
+
+      ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'].forEach(function (evt) {
+        window.addEventListener(evt, unlockAudio, { passive: true });
+      });
+
+      function playTone(ctx, startTime, freq, duration, peakGain) {
+        const oscMain = ctx.createOscillator();
+        const oscHarm = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        oscMain.type = 'triangle';
+        oscMain.frequency.setValueAtTime(freq, startTime);
+        oscHarm.type = 'sine';
+        oscHarm.frequency.setValueAtTime(freq * 2, startTime);
+
+        const harmGain = ctx.createGain();
+        harmGain.gain.setValueAtTime(0.35, startTime);
+
+        gain.gain.setValueAtTime(0.0001, startTime);
+        gain.gain.exponentialRampToValueAtTime(peakGain, startTime + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+        oscMain.connect(gain);
+        oscHarm.connect(harmGain);
+        harmGain.connect(gain);
+        gain.connect(ctx.destination);
+
+        oscMain.start(startTime);
+        oscHarm.start(startTime);
+        oscMain.stop(startTime + duration + 0.02);
+        oscHarm.stop(startTime + duration + 0.02);
+      }
+
+      window.PizzeriaAudio = {
+        triggerAlert: async function (playSound) {
+          if (navigator.vibrate) {
+            try {
+              navigator.vibrate([350, 150, 350, 150, 500]);
+            } catch (_) {}
+          }
+          if (!playSound) return;
+          try {
+            const ctx = getContext();
+            if (!ctx) return;
+            if (ctx.state === 'suspended') await ctx.resume();
+            const now = ctx.currentTime + 0.02;
+            playTone(ctx, now, 987.77, 0.36, 0.9);
+            playTone(ctx, now + 0.30, 783.99, 0.52, 0.95);
+            playTone(ctx, now + 0.90, 987.77, 0.36, 0.9);
+            playTone(ctx, now + 1.20, 783.99, 0.55, 0.95);
+          } catch (_) {}
+        }
+      };
+
+      window.PizzeriaPush = {
+        isSupported: function () {
+          return (
+            'serviceWorker' in navigator &&
+            'PushManager' in window &&
+            'Notification' in window
+          );
+        },
+        getPermissionState: function () {
+          if (!('Notification' in window)) return 'unsupported';
+          return Notification.permission;
+        },
+        subscribe: async function (vapidPublicKey) {
+          if (!this.isSupported()) return null;
+
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') return null;
+
+          const registration = await navigator.serviceWorker.register('/push/sw.js', {
+            scope: '/push/',
+          });
+          await navigator.serviceWorker.ready;
+
+          let subscription = await registration.pushManager.getSubscription();
+          if (!subscription) {
+            const padding = '='.repeat((4 - (vapidPublicKey.length % 4)) % 4);
+            const base64 = (vapidPublicKey + padding)
+              .replace(/-/g, '+')
+              .replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const keyArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+              keyArray[i] = rawData.charCodeAt(i);
+            }
+
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: keyArray,
+            });
+          }
+
+          return JSON.stringify(subscription.toJSON());
+        }
+      };
+    })();
+  </script>
 </body>
 </html>

@@ -96,6 +96,22 @@ class AppUserSession {
   bool get isDipendente => role == UserRole.dipendente;
   bool get isStaffOrOwner => isOwner || isDipendente;
   bool get isRider => UserRole.isRiderRole(role);
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'role': role,
+    'display_name': displayName,
+  };
+
+  factory AppUserSession.fromJson(Map<String, dynamic> json) {
+    final role = json['role'] as String? ?? UserRole.dipendente;
+    final rawName = (json['display_name'] as String? ?? '').trim();
+    return AppUserSession(
+      id: (json['id'] ?? role).toString(),
+      role: role,
+      displayName: rawName.isNotEmpty ? rawName : UserRole.defaultLabel(role),
+    );
+  }
 }
 
 class RiderRates {

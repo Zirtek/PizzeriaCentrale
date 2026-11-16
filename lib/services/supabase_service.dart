@@ -33,7 +33,31 @@ class SupabaseService {
     );
   }
 
-  /// Carica tutti i profili configurati (Titolare, Dipendente, Rider 1..N)
+  Future<UserProfile?> fetchActiveProfileByRole(String role) async {
+    try {
+      final response = await _client.rpc('get_pizzeria_users');
+      if (response is List) {
+        for (final raw in response) {
+          final profile =
+          UserProfile.fromJson(Map<String, dynamic>.from(raw as Map));
+          if (profile.role == role) {
+            return profile.isActive ? profile : null;
+          }
+        }
+        return null;
+      }
+    } catch (_) {
+      final row = await _client
+          .from('pizzeria_users')
+          .select('id, role, display_name')
+          .eq('role', role)
+          .maybeSingle();
+      if (row == null) return null;
+      return UserProfile.fromJson(Map<String, dynamic>.from(row));
+    }
+    return null;
+  }
+
   Future<List<UserProfile>> fetchUserProfiles({
     bool includeInactive = false,
   }) async {
@@ -71,7 +95,6 @@ class SupabaseService {
     return 999;
   }
 
-  /// Crea un nuovo rider (es. rider_3) o aggiorna nome/PIN di un rider esistente
   Future<void> upsertRiderProfile({
     required String role,
     required String displayName,
@@ -87,7 +110,6 @@ class SupabaseService {
     );
   }
 
-  /// Attiva o disattiva un profilo rider/dipendente
   Future<void> setUserActive(String role, bool isActive) async {
     await _client.rpc(
       'set_pizzeria_user_active',
@@ -98,7 +120,6 @@ class SupabaseService {
     );
   }
 
-  /// Elimina un profilo rider dal database
   Future<void> deleteRiderProfile(String role) async {
     await _client.rpc(
       'delete_pizzeria_rider',
@@ -106,7 +127,6 @@ class SupabaseService {
     );
   }
 
-  /// Legge le tariffe configurate per i rider (feriale, sabato, bonus consegna)
   Future<RiderRates> fetchRiderRates() async {
     try {
       final row = await _client
@@ -121,7 +141,6 @@ class SupabaseService {
     return const RiderRates();
   }
 
-  /// Salva le tariffe rider su Supabase
   Future<void> updateRiderRates(RiderRates rates) async {
     await _client.from('pizzeria_settings').upsert({
       'id': 1,
@@ -140,8 +159,6 @@ class SupabaseService {
         .map((rows) => rows.map((r) => PizzeriaOrder.fromJson(r)).toList());
   }
 
-  /// Estrae la rubrica dei clienti abituali dallo storico ordini,
-  /// raggruppando per numero di telefono normalizzato.
   Future<List<SavedCustomer>> fetchSavedCustomers() async {
     final rows = await _client
         .from('pizzeria_orders')
@@ -224,7 +241,6 @@ class SupabaseService {
         .map((rows) => rows.map((r) => MenuItemModel.fromJson(r)).toList());
   }
 
-  /// Divide automaticamente "cocacola/fanta/te" in 3 prodotti singoli con lo stesso prezzo
   Future<void> _ensureCombinedDrinksSplit() async {
     if (_didSplitCombinedDrinks) return;
     _didSplitCombinedDrinks = true;
@@ -273,7 +289,6 @@ class SupabaseService {
     }
   }
 
-  /// Crea l'ordine nello stato "nuovo_ordine" senza rider assegnato
   Future<void> createOrder({
     required DateTime scheduledFor,
     required String customerName,
@@ -305,7 +320,6 @@ class SupabaseService {
     });
   }
 
-  /// Aggiorna un ordine esistente (orario, dati cliente, prodotti, note, pagamento)
   Future<void> updateOrder({
     required String orderId,
     required DateTime scheduledFor,
@@ -348,7 +362,6 @@ class SupabaseService {
         .eq('id', orderId);
   }
 
-  /// Il rider può prendere in carico SOLO se l'ordine è già stato segnato PRONTO
   Future<bool> claimDelivery(String orderId, String riderRole) async {
     final updated = await _client
         .from('pizzeria_orders')
@@ -364,7 +377,6 @@ class SupabaseService {
     return (updated as List).isNotEmpty;
   }
 
-  /// Rimette la consegna tra quelle pronte disponibili (in caso di errore)
   Future<void> releaseDelivery(String orderId) async {
     await _client
         .from('pizzeria_orders')
@@ -375,7 +387,6 @@ class SupabaseService {
         .eq('id', orderId);
   }
 
-  /// Aggiorna stato ordine: quando diventa COMPLETATO segna automaticamente is_paid = true
   Future<void> updateOrderStatus(
       String orderId,
       OrderStatus newStatus, {
@@ -405,7 +416,6 @@ class SupabaseService {
     await _client.from('pizzeria_orders').delete().eq('id', orderId);
   }
 
-  /// Aggiunge un nuovo prodotto al listino
   Future<void> addMenuItem({
     required String category,
     required String name,
@@ -437,7 +447,6 @@ class SupabaseService {
     }).eq('id', id);
   }
 
-  /// Registra l'inizio turno del rider con eventuale fondo cassa iniziale
   Future<void> registerRiderShift(
       String riderRole,
       DateTime date, {
@@ -454,7 +463,6 @@ class SupabaseService {
     );
   }
 
-  /// Aggiorna il fondo cassa durante un turno aperto
   Future<void> updateRiderStartingFloat(
       String riderRole,
       DateTime date,
@@ -468,7 +476,6 @@ class SupabaseService {
         .eq('shift_date', dateStr);
   }
 
-  /// Registra la chiusura esplicita del turno e il versamento cassa al titolare
   Future<void> closeRiderShift({
     required String riderRole,
     required DateTime date,
@@ -498,7 +505,6 @@ class SupabaseService {
     );
   }
 
-  /// Legge il record del turno odierno del rider (incluso fondo cassa e stato chiusura)
   Future<RiderShiftRecord?> fetchTodayRiderShift(String riderRole) async {
     final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final row = await _client
@@ -514,6 +520,26 @@ class SupabaseService {
   Future<bool> hasRiderShiftToday(String riderRole) async {
     final shift = await fetchTodayRiderShift(riderRole);
     return shift != null;
+  }
+
+  Future<void> upsertPushToken({
+    required String riderRole,
+    required String platform,
+    required String tokenOrEndpoint,
+    String? p256dh,
+    String? auth,
+  }) async {
+    await _client.from('pizzeria_push_tokens').upsert(
+      {
+        'rider_role': riderRole,
+        'platform': platform,
+        'token_or_endpoint': tokenOrEndpoint,
+        'p256dh': p256dh,
+        'auth': auth,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'token_or_endpoint',
+    );
   }
 
   Future<RiderCompensationSummary> calculateRiderCompensation({

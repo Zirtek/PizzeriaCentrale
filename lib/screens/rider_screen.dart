@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
+import '../services/push_notification_service.dart';
 import '../services/ready_order_alert_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
@@ -27,7 +28,9 @@ class _RiderScreenState extends State<RiderScreen> {
   RiderRates _rates = const RiderRates();
   Timer? _clockTimer;
 
-  // Traccia gli stati noti degli ordini per rilevare in tempo reale il passaggio a "Pronto"
+  bool _pushActive = false;
+  bool _enablingPush = false;
+
   Map<String, OrderStatus>? _knownOrderStatuses;
   List<PizzeriaOrder> _newlyReadyAlerts = [];
 
@@ -35,6 +38,7 @@ class _RiderScreenState extends State<RiderScreen> {
   void initState() {
     super.initState();
     _loadInitialData();
+    _syncExistingPushIfGranted();
     _clockTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) setState(() {});
     });
@@ -44,6 +48,45 @@ class _RiderScreenState extends State<RiderScreen> {
   void dispose() {
     _clockTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _syncExistingPushIfGranted() async {
+    if (await PushNotificationService.instance.isGranted()) {
+      final ok = await PushNotificationService.instance
+          .enableAndSyncForRider(widget.session.role);
+      if (mounted) {
+        setState(() => _pushActive = ok);
+      }
+    }
+  }
+
+  Future<void> _enablePushNotifications() async {
+    setState(() => _enablingPush = true);
+    try {
+      final ok = await PushNotificationService.instance
+          .enableAndSyncForRider(widget.session.role);
+      if (!mounted) return;
+      setState(() => _pushActive = ok);
+
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Notifiche attivate! Riceverai avvisi anche a schermo spento.'),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 5),
+            content: Text(
+                'Permesso non concesso. Su iPhone aggiungi prima il sito alla schermata Home, poi riprova.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enablingPush = false);
+    }
   }
 
   bool _isBeforeShiftStart(DateTime dt) {
@@ -99,8 +142,7 @@ class _RiderScreenState extends State<RiderScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [0.0, 20.0, 30.0, 50.0].map((preset) {
-                  final isSelected =
-                      (selectedPreset - preset).abs() < 0.01;
+                  final isSelected = (selectedPreset - preset).abs() < 0.01;
                   return ChoiceChip(
                     label: Text(
                       preset == 0
@@ -192,6 +234,9 @@ class _RiderScreenState extends State<RiderScreen> {
       now,
       startingFloat: startingFloat,
     );
+    if (!_pushActive) {
+      await _enablePushNotifications();
+    }
     await _loadInitialData();
   }
 
@@ -533,14 +578,12 @@ class _RiderScreenState extends State<RiderScreen> {
             );
           }).toList();
 
-          // 1. Consegne prese in carico da QUESTO rider e ancora in corso
           final myActiveOrders = todayDeliveries
               .where((o) =>
           o.assignedRider == myRoleDb &&
               o.status != OrderStatus.completato)
               .toList();
 
-          // 2. Consegne del giorno non ancora prese in carico
           final overviewOrders = todayDeliveries
               .where((o) =>
           o.assignedRider == null &&
@@ -551,7 +594,6 @@ class _RiderScreenState extends State<RiderScreen> {
               .where((o) => o.status == OrderStatus.pronto)
               .length;
 
-          // 3. Consegne completate da QUESTO rider oggi
           final myCompletedOrders = todayDeliveries
               .where((o) =>
           o.assignedRider == myRoleDb &&
@@ -564,7 +606,6 @@ class _RiderScreenState extends State<RiderScreen> {
               myCompletedOrders.length * _rates.perDeliveryBonus;
           final todayEarnings = baseQuota + deliveriesBonus;
 
-          // Separazione analitica degli incassi per metodo di pagamento
           final cashFromOrders = myCompletedOrders
               .where((o) =>
           o.isPaid && o.paymentMethod == PaymentMethod.contanti)
@@ -590,7 +631,7 @@ class _RiderScreenState extends State<RiderScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
-              // Banner di allerta immediata quando uno o più ordini diventano PRONTI
+              // Banner di allerta immediata in-app
               if (activeBannerAlerts.isNotEmpty && !isShiftClosed) ...[
                 Container(
                   width: double.infinity,
@@ -700,7 +741,74 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ],
 
-              // Riepilogo Compenso Personale + Cassa Separata (Contanti / POS / Fondo)
+              // Stato Notifiche a schermo spento (Android FCM + iPhone Web Push)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _pushActive
+                      ? AppTheme.darkGreenTint
+                      : AppTheme.surfaceDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _pushActive
+                        ? AppTheme.moneyGreen
+                        : AppTheme.toCompleteYellow,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _pushActive
+                          ? Icons.notifications_active
+                          : Icons.notification_add,
+                      color: _pushActive
+                          ? AppTheme.moneyGreen
+                          : AppTheme.toCompleteYellow,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _pushActive
+                            ? 'Notifiche a schermo spento attive'
+                            : 'Attiva le notifiche per ricevere avvisi anche a schermo spento',
+                        style: TextStyle(
+                          color: _pushActive
+                              ? AppTheme.moneyGreen
+                              : AppTheme.textWhite,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    if (!_pushActive) ...[
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.toCompleteYellow,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                        ),
+                        onPressed:
+                        _enablingPush ? null : _enablePushNotifications,
+                        child: Text(
+                          _enablingPush ? '...' : 'ATTIVA',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              // Riepilogo Compenso Personale + Cassa Separata
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -749,8 +857,7 @@ class _RiderScreenState extends State<RiderScreen> {
                         if (!_loadingShift)
                           if (!hasShiftRecord)
                             ElevatedButton(
-                              onPressed:
-                              canStartShiftNow ? _startShift : null,
+                              onPressed: canStartShiftNow ? _startShift : null,
                               child: Text(
                                 canStartShiftNow
                                     ? 'INIZIA TURNO'
@@ -787,7 +894,6 @@ class _RiderScreenState extends State<RiderScreen> {
                     ),
                     const Divider(height: 20),
 
-                    // Sezione Cassa Separata: Contanti vs Carta/POS + Fondo Cassa
                     Row(
                       children: [
                         Expanded(
@@ -861,7 +967,6 @@ class _RiderScreenState extends State<RiderScreen> {
 
                     const SizedBox(height: 8),
 
-                    // Riga Fondo cassa + Totale contanti fisici da versare
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
@@ -970,7 +1075,6 @@ class _RiderScreenState extends State<RiderScreen> {
                       ),
                     ),
 
-                    // Pulsante Chiusura Turno Esplicita
                     if (canOperateShift) ...[
                       const SizedBox(height: 12),
                       SizedBox(
@@ -1009,7 +1113,6 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ),
 
-              // Banner stato turno (non ancora avviato oppure già chiuso)
               if (!_loadingShift && !hasShiftRecord) ...[
                 const SizedBox(height: 12),
                 Container(
@@ -1077,7 +1180,6 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ],
 
-              // SEZIONE 1: Consegne prese in carico da me in questo momento
               if (myActiveOrders.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Row(
@@ -1107,7 +1209,6 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ],
 
-              // SEZIONE 2: Panoramica completa delle consegne da fare oggi
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -1173,7 +1274,6 @@ class _RiderScreenState extends State<RiderScreen> {
                   ),
                 ),
 
-              // SEZIONE 3: Consegne completate oggi
               if (myCompletedOrders.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 Text(
@@ -1509,7 +1609,6 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 ),
               ],
             ),
-
             if (!widget.isUnassignedOverview) ...[
               const SizedBox(height: 10),
               Row(
@@ -1549,8 +1648,6 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 ],
               ),
             ],
-
-            // Controllo borsa termica: elenco prodotti ordinati
             if (order.items.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
@@ -1677,7 +1774,6 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 ),
               ),
             ],
-
             if (order.notes.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
@@ -1699,8 +1795,6 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
               ),
             ],
             const Divider(height: 18),
-
-            // Box importo (Verde se pagato/incassato, Giallo se da incassare)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
@@ -1730,8 +1824,6 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 ),
               ),
             ),
-
-            // Attivo solo se lo stato è PRONTO E il rider ha un turno aperto
             if (widget.isUnassignedOverview) ...[
               const SizedBox(height: 12),
               SizedBox(
