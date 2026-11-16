@@ -13,10 +13,43 @@ class PinLoginScreen extends StatefulWidget {
 }
 
 class _PinLoginScreenState extends State<PinLoginScreen> {
-  UserRole _selectedRole = UserRole.titolare;
+  List<UserProfile> _profiles = UserProfile.fallbackDefaults();
+  String _selectedRole = UserRole.titolare;
   String _pin = '';
   bool _isLoading = false;
+  bool _loadingProfiles = true;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfiles();
+  }
+
+  Future<void> _loadProfiles() async {
+    setState(() => _loadingProfiles = true);
+    try {
+      final fetched = await SupabaseService.instance.fetchUserProfiles();
+      if (!mounted) return;
+      setState(() {
+        _profiles = fetched;
+        if (!_profiles.any((p) => p.role == _selectedRole) &&
+            _profiles.isNotEmpty) {
+          _selectedRole = _profiles.first.role;
+        }
+        _loadingProfiles = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingProfiles = false);
+    }
+  }
+
+  UserProfile get _currentProfile {
+    return _profiles.firstWhere(
+          (p) => p.role == _selectedRole,
+      orElse: () => _profiles.first,
+    );
+  }
 
   void _onDigitTap(String digit) {
     if (_pin.length >= 4 || _isLoading) return;
@@ -48,7 +81,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
       } else {
         setState(() {
           _pin = '';
-          _errorMessage = 'PIN non corretto per ${_selectedRole.label}';
+          _errorMessage = 'PIN non corretto per ${_currentProfile.displayName}';
         });
       }
     } catch (e) {
@@ -62,28 +95,16 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
     }
   }
 
-  IconData _iconForRole(UserRole role) {
-    switch (role) {
-      case UserRole.titolare:
-        return Icons.admin_panel_settings;
-      case UserRole.dipendente:
-        return Icons.local_pizza;
-      case UserRole.rider1:
-      case UserRole.rider2:
-        return Icons.delivery_dining;
-    }
+  IconData _iconForRole(String role) {
+    if (role == UserRole.titolare) return Icons.admin_panel_settings;
+    if (role == UserRole.dipendente) return Icons.local_pizza;
+    return Icons.delivery_dining;
   }
 
-  String _subtitleForRole(UserRole role) {
-    switch (role) {
-      case UserRole.titolare:
-        return 'Agenda, incassi e listino';
-      case UserRole.dipendente:
-        return 'Comande e preparazione';
-      case UserRole.rider1:
-      case UserRole.rider2:
-        return 'Consegne e cassa turno';
-    }
+  String _subtitleForRole(String role) {
+    if (role == UserRole.titolare) return 'Agenda, incassi e listino';
+    if (role == UserRole.dipendente) return 'Comande e preparazione';
+    return 'Consegne e cassa turno';
   }
 
   @override
@@ -142,21 +163,53 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                   ),
                   const SizedBox(height: 22),
 
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '1. CHI STA ACCEDENDO?',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.textMuted,
-                        letterSpacing: 0.6,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '1. CHI STA ACCEDENDO?',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textMuted,
+                          letterSpacing: 0.6,
+                        ),
                       ),
-                    ),
+                      InkWell(
+                        onTap: _loadingProfiles ? null : _loadProfiles,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.refresh,
+                                size: 15,
+                                color: _loadingProfiles
+                                    ? AppTheme.textMuted
+                                    : AppTheme.toCompleteYellow,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Aggiorna',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: _loadingProfiles
+                                      ? AppTheme.textMuted
+                                      : AppTheme.toCompleteYellow,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
 
-                  // Griglia selezione profilo
+                  // Griglia dinamica dei profili attivi (Titolare, Dipendente, Rider 1..N)
                   GridView.count(
                     crossAxisCount: 2,
                     shrinkWrap: true,
@@ -164,11 +217,11 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                     mainAxisSpacing: 10,
                     crossAxisSpacing: 10,
                     childAspectRatio: 2.15,
-                    children: UserRole.values.map((role) {
-                      final selected = _selectedRole == role;
+                    children: _profiles.map((profile) {
+                      final selected = _selectedRole == profile.role;
                       return InkWell(
                         onTap: () => setState(() {
-                          _selectedRole = role;
+                          _selectedRole = profile.role;
                           _pin = '';
                           _errorMessage = null;
                         }),
@@ -192,7 +245,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                           child: Row(
                             children: [
                               Icon(
-                                _iconForRole(role),
+                                _iconForRole(profile.role),
                                 size: 26,
                                 color: selected
                                     ? Colors.black
@@ -205,7 +258,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      role.label,
+                                      profile.displayName,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontWeight: FontWeight.w900,
@@ -216,7 +269,7 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                                       ),
                                     ),
                                     Text(
-                                      _subtitleForRole(role),
+                                      _subtitleForRole(profile.role),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(

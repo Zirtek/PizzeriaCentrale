@@ -36,13 +36,28 @@ class _AgendaScreenState extends State<AgendaScreen> {
   AgendaFilter _activeFilter = AgendaFilter.tutti;
   bool _hideCompleted = false;
   Timer? _clockTimer;
+  Map<String, String> _riderDisplayNames = {};
 
   @override
   void initState() {
     super.initState();
+    _loadRiderNames();
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
+  }
+
+  Future<void> _loadRiderNames() async {
+    try {
+      final profiles = await SupabaseService.instance
+          .fetchUserProfiles(includeInactive: true);
+      if (!mounted) return;
+      setState(() {
+        _riderDisplayNames = {
+          for (final p in profiles) p.role: p.displayName,
+        };
+      });
+    } catch (_) {}
   }
 
   @override
@@ -95,13 +110,14 @@ class _AgendaScreenState extends State<AgendaScreen> {
               tooltip: 'Incassi, Rider e Listino',
               icon: const Icon(Icons.bar_chart_rounded,
                   size: 28, color: AppTheme.moneyGreen),
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => const OwnerAdminScreen(),
                   ),
                 );
+                _loadRiderNames();
               },
             ),
           IconButton(
@@ -385,13 +401,19 @@ class _AgendaScreenState extends State<AgendaScreen> {
                       itemCount: visibleOrders.length,
                       itemBuilder: (context, index) {
                         final order = visibleOrders[index];
-                        final canDelete = widget.session.isOwner ||
-                            (widget.session.role == UserRole.dipendente &&
+                        final canModify = widget.session.isOwner ||
+                            (widget.session.isDipendente &&
                                 order.status != OrderStatus.completato);
+                        final assignedName = order.assignedRider == null
+                            ? null
+                            : (_riderDisplayNames[order.assignedRider!] ??
+                            UserRole.defaultLabel(order.assignedRider!));
 
                         return _OrderAgendaCard(
                           order: order,
-                          canDeleteOrder: canDelete,
+                          assignedRiderName: assignedName,
+                          canEditOrder: canModify,
+                          canDeleteOrder: canModify,
                         );
                       },
                     );
@@ -447,10 +469,14 @@ class _RevenueMetricTile extends StatelessWidget {
 
 class _OrderAgendaCard extends StatelessWidget {
   final PizzeriaOrder order;
+  final String? assignedRiderName;
+  final bool canEditOrder;
   final bool canDeleteOrder;
 
   const _OrderAgendaCard({
     required this.order,
+    required this.assignedRiderName,
+    required this.canEditOrder,
     required this.canDeleteOrder,
   });
 
@@ -916,7 +942,7 @@ class _OrderAgendaCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           order.assignedRider != null
-                              ? 'Presa in carico da: ${UserRole.fromDb(order.assignedRider!).label}'
+                              ? 'Presa in carico da: ${assignedRiderName ?? order.assignedRider}'
                               : (order.status == OrderStatus.pronto
                               ? 'Pronto • Il rider può ora prenderlo in carico'
                               : 'Visibile ai rider • Segna "Pronto" per sbloccarlo'),
@@ -947,7 +973,7 @@ class _OrderAgendaCard extends StatelessWidget {
                 ),
               ),
 
-            // Riga finale: Totale + Stato Pagamento + Elimina (Titolare sempre, Dipendente solo se non completato) + Stato
+            // Riga finale: Totale + Stato Pagamento + Modifica + Elimina + Stato
             Row(
               children: [
                 Column(
@@ -1001,6 +1027,23 @@ class _OrderAgendaCard extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
+                if (canEditOrder)
+                  IconButton(
+                    tooltip: 'Modifica ordine',
+                    icon: const Icon(Icons.edit_outlined,
+                        color: AppTheme.toCompleteYellow),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => NewOrderScreen(
+                            initialDate: order.scheduledFor,
+                            existingOrder: order,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 if (canDeleteOrder)
                   IconButton(
                     tooltip: 'Annulla ed elimina ordine',

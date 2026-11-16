@@ -39,7 +39,7 @@ class _OwnerAdminScreenState extends State<OwnerAdminScreen>
           tabs: const [
             Tab(icon: Icon(Icons.payments_outlined), text: 'Incassi e Rider'),
             Tab(icon: Icon(Icons.restaurant_menu), text: 'Menu e Prezzi'),
-            Tab(icon: Icon(Icons.lock), text: 'Gestione PIN'),
+            Tab(icon: Icon(Icons.group), text: 'Team e PIN'),
           ],
         ),
       ),
@@ -64,6 +64,102 @@ class _RiderCompensationsTab extends StatefulWidget {
 
 class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
   String _period = 'oggi'; // 'oggi', 'settimana', 'mese'
+
+  final _weekdayFeeCtrl = TextEditingController(text: '15.00');
+  final _saturdayFeeCtrl = TextEditingController(text: '20.00');
+  final _bonusFeeCtrl = TextEditingController(text: '2.00');
+
+  bool _loadingConfig = true;
+  bool _savingRates = false;
+  RiderRates _rates = const RiderRates();
+  List<UserProfile> _riders = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettingsAndRiders();
+  }
+
+  @override
+  void dispose() {
+    _weekdayFeeCtrl.dispose();
+    _saturdayFeeCtrl.dispose();
+    _bonusFeeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSettingsAndRiders() async {
+    setState(() => _loadingConfig = true);
+    try {
+      final results = await Future.wait([
+        SupabaseService.instance.fetchRiderRates(),
+        SupabaseService.instance.fetchUserProfiles(includeInactive: true),
+      ]);
+      if (!mounted) return;
+      final fetchedRates = results[0] as RiderRates;
+      final allProfiles = results[1] as List<UserProfile>;
+
+      setState(() {
+        _rates = fetchedRates;
+        _weekdayFeeCtrl.text = fetchedRates.weekdayBaseFee.toStringAsFixed(2);
+        _saturdayFeeCtrl.text = fetchedRates.saturdayBaseFee.toStringAsFixed(2);
+        _bonusFeeCtrl.text = fetchedRates.perDeliveryBonus.toStringAsFixed(2);
+        _riders = allProfiles.where((p) => p.isRider).toList();
+        _loadingConfig = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingConfig = false);
+    }
+  }
+
+  Future<void> _saveRates() async {
+    final weekday =
+    double.tryParse(_weekdayFeeCtrl.text.trim().replaceAll(',', '.'));
+    final saturday =
+    double.tryParse(_saturdayFeeCtrl.text.trim().replaceAll(',', '.'));
+    final bonus =
+    double.tryParse(_bonusFeeCtrl.text.trim().replaceAll(',', '.'));
+
+    if (weekday == null ||
+        weekday < 0 ||
+        saturday == null ||
+        saturday < 0 ||
+        bonus == null ||
+        bonus < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Inserisci importi numerici validi (es. 15.00)'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _savingRates = true);
+    try {
+      final updated = RiderRates(
+        weekdayBaseFee: weekday,
+        saturdayBaseFee: saturday,
+        perDeliveryBonus: bonus,
+      );
+      await SupabaseService.instance.updateRiderRates(updated);
+      if (!mounted) return;
+      setState(() {
+        _rates = updated;
+      });
+      FocusScope.of(context).unfocus();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tariffe rider salvate con successo')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore salvataggio tariffe: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingRates = false);
+    }
+  }
 
   (DateTime, DateTime) _dateRange() {
     final now = DateTime.now();
@@ -181,75 +277,201 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
           },
         ),
 
-        // Compensi Rider 1 e Rider 2
-        FutureBuilder<List<RiderCompensationSummary>>(
-          future: Future.wait([
-            SupabaseService.instance.calculateRiderCompensation(
-              riderRole: 'rider_1',
-              riderName: 'Rider 1',
-              fromDate: from,
-              toDate: to,
-            ),
-            SupabaseService.instance.calculateRiderCompensation(
-              riderRole: 'rider_2',
-              riderName: 'Rider 2',
-              fromDate: from,
-              toDate: to,
-            ),
-          ]),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final summaries = snapshot.data!;
-            return Column(
-              children: summaries.map((s) {
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              s.riderName,
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textWhite,
-                              ),
-                            ),
-                            Text(
-                              '€ ${s.grandTotal.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 25,
-                                fontWeight: FontWeight.w900,
-                                color: AppTheme.moneyGreen,
-                              ),
-                            ),
-                          ],
+        // Configurazione Tariffe Rider
+        Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.tune,
+                        size: 18, color: AppTheme.toCompleteYellow),
+                    SizedBox(width: 8),
+                    Text(
+                      'TARIFFE COMPENSI RIDER',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.toCompleteYellow,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _weekdayFeeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Feriale (€)',
                         ),
-                        const Divider(),
-                        Text(
-                          'Turni lavorati: ${s.shiftDaysCount} giorni -> € ${s.baseFeesTotal.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppTheme.textMuted),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _saturdayFeeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Sabato (€)',
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Consegne completate (Diretto + Just Eat): ${s.completedDeliveriesCount} -> € ${s.deliveriesBonusTotal.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppTheme.textMuted),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _bonusFeeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'A consegna (€)',
                         ),
-                      ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _savingRates ? null : _saveRates,
+                    icon: _savingRates
+                        ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.black,
+                      ),
+                    )
+                        : const Icon(Icons.save_outlined),
+                    label: Text(
+                      _savingRates ? 'SALVATAGGIO...' : 'SALVA TARIFFE',
                     ),
                   ),
-                );
-              }).toList(),
-            );
-          },
+                ),
+              ],
+            ),
+          ),
         ),
+
+        // Compensi dinamici per TUTTI i rider configurati
+        if (_loadingConfig)
+          const Center(child: CircularProgressIndicator())
+        else if (_riders.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Nessun rider configurato. Aggiungine uno dalla scheda "Team e PIN".',
+                style: TextStyle(color: AppTheme.textMuted),
+              ),
+            ),
+          )
+        else
+          FutureBuilder<List<RiderCompensationSummary>>(
+            future: Future.wait(
+              _riders.map(
+                    (r) => SupabaseService.instance.calculateRiderCompensation(
+                  riderRole: r.role,
+                  riderName: r.displayName,
+                  isActive: r.isActive,
+                  fromDate: from,
+                  toDate: to,
+                  rates: _rates,
+                ),
+              ),
+            ),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final summaries = snapshot.data!;
+              return Column(
+                children: summaries.map((s) {
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        s.riderName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppTheme.textWhite,
+                                        ),
+                                      ),
+                                    ),
+                                    if (!s.isActive) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.darkRedTint,
+                                          borderRadius:
+                                          BorderRadius.circular(6),
+                                          border: Border.all(
+                                              color: AppTheme.toStartRed),
+                                        ),
+                                        child: const Text(
+                                          'DISATTIVATO',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.toStartRed,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                '€ ${s.grandTotal.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.moneyGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(),
+                          Text(
+                            'Turni lavorati: ${s.shiftDaysCount} giorni -> € ${s.baseFeesTotal.toStringAsFixed(2)}',
+                            style: const TextStyle(color: AppTheme.textMuted),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Consegne completate (Diretto + Just Eat): ${s.completedDeliveriesCount} × € ${_rates.perDeliveryBonus.toStringAsFixed(2)} -> € ${s.deliveriesBonusTotal.toStringAsFixed(2)}',
+                            style: const TextStyle(color: AppTheme.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
       ],
     );
   }
@@ -564,15 +786,184 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
   }
 }
 
-class _PinManagerTab extends StatelessWidget {
+class _PinManagerTab extends StatefulWidget {
   const _PinManagerTab();
 
-  Future<void> _changePinDialog(BuildContext context, UserRole role) async {
+  @override
+  State<_PinManagerTab> createState() => _PinManagerTabState();
+}
+
+class _PinManagerTabState extends State<_PinManagerTab> {
+  List<UserProfile> _profiles = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfiles();
+  }
+
+  Future<void> _loadProfiles() async {
+    setState(() => _loading = true);
+    try {
+      final list = await SupabaseService.instance
+          .fetchUserProfiles(includeInactive: true);
+      if (mounted) {
+        setState(() {
+          _profiles = list;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _nextAvailableRiderRole() {
+    final usedNumbers = _profiles
+        .where((p) => p.isRider)
+        .map((p) => UserRole.riderNumber(p.role))
+        .toSet();
+    int candidate = 1;
+    while (usedNumbers.contains(candidate)) {
+      candidate++;
+    }
+    return 'rider_$candidate';
+  }
+
+  Future<void> _addNewRiderDialog() async {
+    final nextRole = _nextAvailableRiderRole();
+    final nextLabel = UserRole.defaultLabel(nextRole);
+    final nameCtrl = TextEditingController(text: nextLabel);
+    final pinCtrl = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Aggiungi Nuovo Rider ($nextLabel)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nome visualizzato (es. Rider 3 o Marco)',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: pinCtrl,
+              maxLength: 4,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'PIN iniziale (4 cifre)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              final pin = pinCtrl.text.trim();
+              if (name.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Inserisci il nome del rider')),
+                );
+                return;
+              }
+              if (pin.length != 4 || int.tryParse(pin) == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Il PIN deve essere di 4 cifre numeriche')),
+                );
+                return;
+              }
+
+              try {
+                await SupabaseService.instance.upsertRiderProfile(
+                  role: nextRole,
+                  displayName: name,
+                  pin: pin,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                await _loadProfiles();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Rider "$name" aggiunto')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Errore creazione rider: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Crea Rider'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editRiderNameDialog(UserProfile profile) async {
+    final nameCtrl = TextEditingController(text: profile.displayName);
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Rinomina ${profile.displayName}'),
+        content: TextField(
+          controller: nameCtrl,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Nuovo nome visualizzato',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              try {
+                await SupabaseService.instance.upsertRiderProfile(
+                  role: profile.role,
+                  displayName: name,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                await _loadProfiles();
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Errore modifica nome: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Salva'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changePinDialog(UserProfile profile) async {
     final pinCtrl = TextEditingController();
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Nuovo PIN per ${role.label}'),
+        title: Text('Nuovo PIN per ${profile.displayName}'),
         content: TextField(
           controller: pinCtrl,
           maxLength: 4,
@@ -589,11 +980,13 @@ class _PinManagerTab extends StatelessWidget {
             onPressed: () async {
               final pin = pinCtrl.text.trim();
               if (pin.length != 4 || int.tryParse(pin) == null) return;
-              await SupabaseService.instance.updateUserPin(role, pin);
+              await SupabaseService.instance.updateUserPin(profile.role, pin);
               if (ctx.mounted) {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('PIN aggiornato per ${role.label}')),
+                  SnackBar(
+                    content: Text('PIN aggiornato per ${profile.displayName}'),
+                  ),
                 );
               }
             },
@@ -604,34 +997,155 @@ class _PinManagerTab extends StatelessWidget {
     );
   }
 
+  Future<void> _confirmDeleteRider(UserProfile profile) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Eliminare ${profile.displayName}?'),
+        content: const Text(
+          'Il profilo verrà rimosso dall\'accesso. Se preferisci conservare lo storico turni, usa invece lo switch per disattivarlo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.toStartRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      await SupabaseService.instance.deleteRiderProfile(profile.role);
+      await _loadProfiles();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore eliminazione: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: UserRole.values.map((role) {
-        return Card(
-          margin: const EdgeInsets.only(bottom: 10),
-          child: ListTile(
-            leading:
-            const Icon(Icons.pin, color: AppTheme.toCompleteYellow),
-            title: Text(
-              role.label,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textWhite,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _addNewRiderDialog,
+            icon: const Icon(Icons.person_add_alt_1),
+            label: const Text('AGGIUNGI NUOVO RIDER'),
+          ),
+        ),
+        const SizedBox(height: 14),
+        ..._profiles.map((profile) {
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        profile.isOwner
+                            ? Icons.admin_panel_settings
+                            : (profile.isDipendente
+                            ? Icons.local_pizza
+                            : Icons.delivery_dining),
+                        color: profile.isActive
+                            ? AppTheme.toCompleteYellow
+                            : AppTheme.textMuted,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              profile.displayName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: profile.isActive
+                                    ? AppTheme.textWhite
+                                    : AppTheme.textMuted,
+                                decoration: profile.isActive
+                                    ? null
+                                    : TextDecoration.lineThrough,
+                              ),
+                            ),
+                            Text(
+                              'Codice: ${profile.role} • ${profile.isActive ? "Attivo" : "Disattivato"}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: profile.isActive
+                                    ? AppTheme.textMuted
+                                    : AppTheme.toStartRed,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (profile.isRider)
+                        Switch(
+                          value: profile.isActive,
+                          activeColor: AppTheme.moneyGreen,
+                          onChanged: (val) async {
+                            await SupabaseService.instance
+                                .setUserActive(profile.role, val);
+                            await _loadProfiles();
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => _changePinDialog(profile),
+                        icon: const Icon(Icons.pin, size: 17),
+                        label: const Text('Cambia PIN'),
+                      ),
+                      if (profile.isRider) ...[
+                        OutlinedButton.icon(
+                          onPressed: () => _editRiderNameDialog(profile),
+                          icon: const Icon(Icons.edit_outlined, size: 17),
+                          label: const Text('Nome'),
+                        ),
+                        IconButton(
+                          tooltip: 'Elimina rider',
+                          icon: const Icon(Icons.delete_outline,
+                              color: AppTheme.toStartRed),
+                          onPressed: () => _confirmDeleteRider(profile),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
             ),
-            subtitle: const Text(
-              'PIN protetto con crittografia nel database',
-              style: TextStyle(color: AppTheme.textMuted),
-            ),
-            trailing: OutlinedButton(
-              onPressed: () => _changePinDialog(context, role),
-              child: const Text('Cambia PIN'),
-            ),
-          ),
-        );
-      }).toList(),
+          );
+        }),
+      ],
     );
   }
 }

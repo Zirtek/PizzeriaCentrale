@@ -22,19 +22,23 @@ class RiderScreen extends StatefulWidget {
 class _RiderScreenState extends State<RiderScreen> {
   bool _shiftRegisteredToday = false;
   bool _loadingShift = true;
+  RiderRates _rates = const RiderRates();
 
   @override
   void initState() {
     super.initState();
-    _checkTodayShift();
+    _loadInitialData();
   }
 
-  Future<void> _checkTodayShift() async {
-    final hasShift = await SupabaseService.instance
-        .hasRiderShiftToday(widget.session.role.dbValue);
+  Future<void> _loadInitialData() async {
+    final results = await Future.wait([
+      SupabaseService.instance.hasRiderShiftToday(widget.session.role),
+      SupabaseService.instance.fetchRiderRates(),
+    ]);
     if (mounted) {
       setState(() {
-        _shiftRegisteredToday = hasShift;
+        _shiftRegisteredToday = results[0] as bool;
+        _rates = results[1] as RiderRates;
         _loadingShift = false;
       });
     }
@@ -42,25 +46,25 @@ class _RiderScreenState extends State<RiderScreen> {
 
   Future<void> _startShift() async {
     await SupabaseService.instance
-        .registerRiderShift(widget.session.role.dbValue, DateTime.now());
-    await _checkTodayShift();
-  }
-
-  double _todayBaseFee() {
-    final wd = DateTime.now().weekday;
-    return wd == DateTime.saturday ? 20.0 : 15.0;
+        .registerRiderShift(widget.session.role, DateTime.now());
+    await _loadInitialData();
   }
 
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now();
-    final myRoleDb = widget.session.role.dbValue;
+    final myRoleDb = widget.session.role;
     final hasActiveShift = !_loadingShift && _shiftRegisteredToday;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Area ${widget.session.displayName}'),
         actions: [
+          IconButton(
+            tooltip: 'Aggiorna tariffe e turno',
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadInitialData,
+          ),
           IconButton(
             tooltip: 'Esci',
             icon: const Icon(Icons.logout),
@@ -108,8 +112,11 @@ class _RiderScreenState extends State<RiderScreen> {
               o.status == OrderStatus.completato)
               .toList();
 
-          final baseQuota = _shiftRegisteredToday ? _todayBaseFee() : 0.0;
-          final todayEarnings = baseQuota + (myCompletedOrders.length * 2.0);
+          final baseQuota =
+          _shiftRegisteredToday ? _rates.baseFeeForDate(today) : 0.0;
+          final deliveriesBonus =
+              myCompletedOrders.length * _rates.perDeliveryBonus;
+          final todayEarnings = baseQuota + deliveriesBonus;
 
           final collectedFromDeliveries = myCompletedOrders
               .where((o) =>
@@ -157,7 +164,7 @@ class _RiderScreenState extends State<RiderScreen> {
                               ),
                             ),
                             Text(
-                              'Turno: € ${baseQuota.toStringAsFixed(0)} + ${myCompletedOrders.length} cons. (€ ${myCompletedOrders.length * 2})',
+                              'Turno: € ${baseQuota.toStringAsFixed(2)} + ${myCompletedOrders.length} cons. (€ ${deliveriesBonus.toStringAsFixed(2)})',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: AppTheme.textMuted,
@@ -434,7 +441,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Consegna non ancora pronta o già presa dall\'altro rider.'),
+                'Consegna non ancora pronta o già presa da un altro rider.'),
           ),
         );
       }

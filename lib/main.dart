@@ -69,7 +69,7 @@ class _PizzeriaAppState extends State<PizzeriaApp> {
       return PinLoginScreen(onAuthenticated: _onLoginSuccess);
     }
 
-    if (session.role == UserRole.rider1 || session.role == UserRole.rider2) {
+    if (session.isRider) {
       return RiderScreen(session: session, onLogout: _onLogout);
     }
 

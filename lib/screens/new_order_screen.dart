@@ -6,8 +6,13 @@ import '../theme/app_theme.dart';
 
 class NewOrderScreen extends StatefulWidget {
   final DateTime initialDate;
+  final PizzeriaOrder? existingOrder;
 
-  const NewOrderScreen({super.key, required this.initialDate});
+  const NewOrderScreen({
+    super.key,
+    required this.initialDate,
+    this.existingOrder,
+  });
 
   @override
   State<NewOrderScreen> createState() => _NewOrderScreenState();
@@ -46,39 +51,286 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   final List<OrderLineItem> _cart = [];
   bool _isSaving = false;
 
+  // Rubrica clienti abituali
+  List<SavedCustomer> _savedCustomers = [];
+  List<SavedCustomer> _matchingCustomers = [];
+  bool _suppressSuggestions = false;
+
+  bool get _isEditing => widget.existingOrder != null;
+
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    final isToday = now.year == widget.initialDate.year &&
-        now.month == widget.initialDate.month &&
-        now.day == widget.initialDate.day;
+    final existing = widget.existingOrder;
 
-    int initialHour = 19;
-    int initialMinute = 0;
+    if (existing != null) {
+      _nameCtrl.text = existing.customerName;
+      _phoneCtrl.text = existing.customerPhone;
+      _addressCtrl.text = existing.deliveryAddress;
+      _notesCtrl.text = existing.notes;
+      _scheduledDateTime = existing.scheduledFor;
+      _source = existing.source;
+      _deliveryType = existing.deliveryType;
+      _paymentMethod = existing.paymentMethod;
+      _isPaid = existing.isPaid;
+      _cart.addAll(existing.items);
+      _suppressSuggestions = true;
+    } else {
+      final now = DateTime.now();
+      final isToday = now.year == widget.initialDate.year &&
+          now.month == widget.initialDate.month &&
+          now.day == widget.initialDate.day;
 
-    if (isToday) {
-      final nowMinutes = now.hour * 60 + now.minute;
-      const startMinutes = 19 * 60; // 19:00
-      const endMinutes = 21 * 60 + 30; // 21:30
-      if (nowMinutes >= startMinutes && nowMinutes < endMinutes) {
-        final nextQuarter = ((nowMinutes ~/ 15) + 1) * 15;
-        initialHour = nextQuarter ~/ 60;
-        initialMinute = nextQuarter % 60;
+      int initialHour = 19;
+      int initialMinute = 0;
+
+      if (isToday) {
+        final nowMinutes = now.hour * 60 + now.minute;
+        const startMinutes = 19 * 60; // 19:00
+        const endMinutes = 21 * 60 + 30; // 21:30
+        if (nowMinutes >= startMinutes && nowMinutes < endMinutes) {
+          final nextQuarter = ((nowMinutes ~/ 15) + 1) * 15;
+          initialHour = nextQuarter ~/ 60;
+          initialMinute = nextQuarter % 60;
+        }
       }
+
+      _scheduledDateTime = DateTime(
+        widget.initialDate.year,
+        widget.initialDate.month,
+        widget.initialDate.day,
+        initialHour,
+        initialMinute,
+      );
     }
 
-    _scheduledDateTime = DateTime(
-      widget.initialDate.year,
-      widget.initialDate.month,
-      widget.initialDate.day,
-      initialHour,
-      initialMinute,
+    _phoneCtrl.addListener(_onCustomerFieldChanged);
+    _nameCtrl.addListener(_onCustomerFieldChanged);
+    _loadSavedCustomers();
+  }
+
+  Future<void> _loadSavedCustomers() async {
+    try {
+      final list = await SupabaseService.instance.fetchSavedCustomers();
+      if (mounted) {
+        setState(() {
+          _savedCustomers = list;
+        });
+        _updateCustomerMatches();
+      }
+    } catch (_) {
+      // Ignora eventuali errori di rete sulla rubrica senza bloccare l'ordine
+    }
+  }
+
+  void _onCustomerFieldChanged() {
+    if (_suppressSuggestions) {
+      _suppressSuggestions = false;
+      return;
+    }
+    _updateCustomerMatches();
+  }
+
+  void _updateCustomerMatches() {
+    if (_savedCustomers.isEmpty) return;
+
+    final phoneQuery = SupabaseService.normalizePhone(_phoneCtrl.text);
+    final nameQuery = _nameCtrl.text.trim().toLowerCase();
+
+    if (phoneQuery.length < 2 && nameQuery.length < 2) {
+      if (_matchingCustomers.isNotEmpty) {
+        setState(() => _matchingCustomers = []);
+      }
+      return;
+    }
+
+    final matches = _savedCustomers.where((c) {
+      final cPhone = SupabaseService.normalizePhone(c.phone);
+      final cName = c.name.toLowerCase();
+
+      final phoneMatch = phoneQuery.length >= 2 && cPhone.contains(phoneQuery);
+      final nameMatch = nameQuery.length >= 2 && cName.contains(nameQuery);
+      return phoneMatch || nameMatch;
+    }).take(4).toList();
+
+    setState(() {
+      _matchingCustomers = matches;
+    });
+  }
+
+  void _applyCustomer(SavedCustomer customer) {
+    _suppressSuggestions = true;
+    setState(() {
+      _nameCtrl.text = customer.name;
+      _phoneCtrl.text = customer.phone;
+      if (customer.address.isNotEmpty) {
+        _addressCtrl.text = customer.address;
+      }
+      _matchingCustomers = [];
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _openCustomerDirectorySheet() async {
+    final searchCtrl = TextEditingController();
+    String filter = '';
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surfaceDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final filtered = _savedCustomers.where((c) {
+            if (filter.isEmpty) return true;
+            final q = filter.toLowerCase();
+            final qDigits = SupabaseService.normalizePhone(filter);
+            return c.name.toLowerCase().contains(q) ||
+                c.address.toLowerCase().contains(q) ||
+                (qDigits.isNotEmpty &&
+                    SupabaseService.normalizePhone(c.phone).contains(qDigits));
+          }).toList();
+
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.78,
+            maxChildSize: 0.92,
+            builder: (_, scrollCtrl) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Rubrica Clienti (${_savedCustomers.length})',
+                          style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textWhite,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: searchCtrl,
+                      onChanged: (v) => setModalState(() => filter = v.trim()),
+                      decoration: InputDecoration(
+                        hintText: 'Cerca per telefono, nome o via...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: filter.isNotEmpty
+                            ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            searchCtrl.clear();
+                            setModalState(() => filter = '');
+                          },
+                        )
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(
+                        child: Text(
+                          'Nessun cliente trovato in rubrica.',
+                          style: TextStyle(color: AppTheme.textMuted),
+                        ),
+                      )
+                          : ListView.separated(
+                        controller: scrollCtrl,
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) =>
+                        const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final c = filtered[i];
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              _applyCustomer(c);
+                            },
+                            leading: CircleAvatar(
+                              backgroundColor: AppTheme.surfaceElevated,
+                              child: Text(
+                                c.name.isNotEmpty
+                                    ? c.name[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.toCompleteYellow,
+                                ),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    c.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.textWhite,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.darkGreenTint,
+                                    borderRadius:
+                                    BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: AppTheme.moneyGreen),
+                                  ),
+                                  child: Text(
+                                    '${c.ordersCount} ${c.ordersCount == 1 ? "ordine" : "ordini"}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.moneyGreen,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              '${c.phone}${c.address.isNotEmpty ? " • ${c.address}" : ""}',
+                              style: const TextStyle(
+                                color: AppTheme.textMuted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
   @override
   void dispose() {
+    _phoneCtrl.removeListener(_onCustomerFieldChanged);
+    _nameCtrl.removeListener(_onCustomerFieldChanged);
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
@@ -114,7 +366,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
           newSource == OrderSource.glovo ||
           newSource == OrderSource.deliveroo) {
         _deliveryType = DeliveryType.consegna;
-        if (newSource != OrderSource.diretto) {
+        if (!_isEditing && newSource != OrderSource.diretto) {
           _paymentMethod = PaymentMethod.online;
           _isPaid = true;
         }
@@ -126,7 +378,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     final date = await showDatePicker(
       context: context,
       initialDate: _scheduledDateTime,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       locale: const Locale('it', 'IT'),
     );
@@ -470,9 +722,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.remove_circle_outline, size: 28),
-                        onPressed: qty > 1
-                            ? () => setDlgState(() => qty--)
-                            : null,
+                        onPressed:
+                        qty > 1 ? () => setDlgState(() => qty--) : null,
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -564,6 +815,135 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     );
   }
 
+  Future<void> _editCartItemDialog(
+      int index, StateSetter setSheetState) async {
+    final existing = _cart[index];
+    final priceCtrl =
+    TextEditingController(text: existing.unitPrice.toStringAsFixed(2));
+    final addCtrl =
+    TextEditingController(text: existing.addedIngredients.join(', '));
+    final remCtrl =
+    TextEditingController(text: existing.removedIngredients.join(', '));
+    final noteCtrl = TextEditingController(text: existing.notes);
+    int qty = existing.quantity;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          return AlertDialog(
+            title: Text('Modifica: ${existing.name}'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, size: 28),
+                        onPressed:
+                        qty > 1 ? () => setDlgState(() => qty--) : null,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '$qty',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline, size: 28),
+                        onPressed: () => setDlgState(() => qty++),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Prezzo unitario (€)',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: addCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Aggiungi (+ ingredienti, separati da virgola)',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: remCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Togli (- ingredienti, separati da virgola)',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Note per la cucina',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Annulla'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final parsedPrice = double.tryParse(
+                    priceCtrl.text.replaceAll(',', '.'),
+                  );
+                  if (parsedPrice == null || parsedPrice <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                        Text('Inserisci un prezzo valido maggiore di 0'),
+                      ),
+                    );
+                    return;
+                  }
+                  setState(() {
+                    _cart[index] = OrderLineItem(
+                      name: existing.name,
+                      category: existing.category,
+                      quantity: qty,
+                      unitPrice: parsedPrice,
+                      addedIngredients: addCtrl.text
+                          .split(',')
+                          .map((e) => e.trim())
+                          .where((e) => e.isNotEmpty)
+                          .toList(),
+                      removedIngredients: remCtrl.text
+                          .split(',')
+                          .map((e) => e.trim())
+                          .where((e) => e.isNotEmpty)
+                          .toList(),
+                      notes: noteCtrl.text.trim(),
+                    );
+                  });
+                  setSheetState(() {});
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Salva'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _openCartSheet() {
     showModalBottomSheet(
       context: context,
@@ -621,12 +1001,22 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         ].join(', ');
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
+                          onTap: () => _editCartItemDialog(idx, setSheetState),
                           title: Text(
                             '${item.quantity}x ${item.name}',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          subtitle:
-                          details.isNotEmpty ? Text(details) : null,
+                          subtitle: Text(
+                            details.isNotEmpty
+                                ? '$details • Tocca per modificare'
+                                : 'Tocca per modificare varianti/quantità',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: details.isNotEmpty
+                                  ? AppTheme.toCompleteYellow
+                                  : AppTheme.textMuted,
+                            ),
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -638,6 +1028,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                 ),
                               ),
                               IconButton(
+                                tooltip: 'Modifica articolo',
+                                icon: const Icon(Icons.edit_outlined,
+                                    color: AppTheme.toCompleteYellow),
+                                onPressed: () =>
+                                    _editCartItemDialog(idx, setSheetState),
+                              ),
+                              IconButton(
+                                tooltip: 'Rimuovi articolo',
                                 icon: const Icon(Icons.delete_outline,
                                     color: AppTheme.toStartRed),
                                 onPressed: () {
@@ -685,19 +1083,36 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
     setState(() => _isSaving = true);
     try {
-      await SupabaseService.instance.createOrder(
-        scheduledFor: _scheduledDateTime,
-        customerName: _nameCtrl.text,
-        customerPhone: _phoneCtrl.text,
-        deliveryAddress: _addressCtrl.text,
-        deliveryType: _deliveryType,
-        source: _source,
-        items: _cart,
-        notes: _notesCtrl.text,
-        totalAmount: _cartTotal,
-        paymentMethod: _paymentMethod,
-        isPaid: _isPaid,
-      );
+      if (_isEditing) {
+        await SupabaseService.instance.updateOrder(
+          orderId: widget.existingOrder!.id,
+          scheduledFor: _scheduledDateTime,
+          customerName: _nameCtrl.text,
+          customerPhone: _phoneCtrl.text,
+          deliveryAddress: _addressCtrl.text,
+          deliveryType: _deliveryType,
+          source: _source,
+          items: _cart,
+          notes: _notesCtrl.text,
+          totalAmount: _cartTotal,
+          paymentMethod: _paymentMethod,
+          isPaid: _isPaid,
+        );
+      } else {
+        await SupabaseService.instance.createOrder(
+          scheduledFor: _scheduledDateTime,
+          customerName: _nameCtrl.text,
+          customerPhone: _phoneCtrl.text,
+          deliveryAddress: _addressCtrl.text,
+          deliveryType: _deliveryType,
+          source: _source,
+          items: _cart,
+          notes: _notesCtrl.text,
+          totalAmount: _cartTotal,
+          paymentMethod: _paymentMethod,
+          isPaid: _isPaid,
+        );
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -724,7 +1139,13 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Nuovo Ordine Veloce')),
+      appBar: AppBar(
+        title: Text(
+          _isEditing
+              ? 'Modifica Ordine #${widget.existingOrder!.orderNumber}'
+              : 'Nuovo Ordine Veloce',
+        ),
+      ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
         decoration: const BoxDecoration(
@@ -794,7 +1215,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     )
                         : const Icon(Icons.check_circle_outline),
                     label: Text(
-                      _isSaving ? 'SALVATAGGIO...' : 'SALVA ORDINE',
+                      _isSaving
+                          ? 'SALVATAGGIO...'
+                          : (_isEditing ? 'SALVA MODIFICHE' : 'SALVA ORDINE'),
                       style: const TextStyle(fontSize: 16),
                     ),
                   ),
@@ -878,18 +1301,37 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
               const SizedBox(height: 18),
 
-              // 2. Orario (19:00 - 21:30 ogni 15 min) + Dati cliente
+              // 2. Orario (19:00 - 21:30 ogni 15 min) + Dati cliente + Rubrica
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    '2. ORARIO (19:00 - 21:30) E CLIENTE',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                      color: AppTheme.toCompleteYellow,
+                  const Expanded(
+                    child: Text(
+                      '2. ORARIO E CLIENTE',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                        color: AppTheme.toCompleteYellow,
+                      ),
                     ),
                   ),
+                  if (_savedCustomers.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ActionChip(
+                        avatar: const Icon(Icons.contact_phone_outlined,
+                            size: 14, color: AppTheme.moneyGreen),
+                        label: Text(
+                          'Rubrica (${_savedCustomers.length})',
+                          style: const TextStyle(
+                            color: AppTheme.moneyGreen,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        backgroundColor: AppTheme.surfaceElevated,
+                        onPressed: _openCustomerDirectorySheet,
+                      ),
+                    ),
                   ActionChip(
                     avatar: const Icon(Icons.calendar_today,
                         size: 14, color: AppTheme.toCompleteYellow),
@@ -935,28 +1377,126 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
               Row(
                 children: [
                   Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: _nameCtrl,
-                      decoration:
-                      const InputDecoration(labelText: 'Nome cliente *'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
                     flex: 2,
                     child: TextField(
                       controller: _phoneCtrl,
                       keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(labelText: 'Telefono'),
+                      decoration: const InputDecoration(
+                        labelText: 'Telefono',
+                        prefixIcon: Icon(Icons.phone_outlined, size: 19),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: _nameCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration:
+                      const InputDecoration(labelText: 'Nome cliente *'),
                     ),
                   ),
                 ],
               ),
+
+              // Suggerimenti istantanei dalla rubrica clienti abituali
+              if (_matchingCustomers.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceElevated,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppTheme.toCompleteYellow,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
+                        child: Row(
+                          children: [
+                            Icon(Icons.bolt,
+                                size: 15, color: AppTheme.toCompleteYellow),
+                            SizedBox(width: 4),
+                            Text(
+                              'CLIENTI ABITUALI TROVATI (TOCCA PER COMPILARE)',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: AppTheme.toCompleteYellow,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ..._matchingCustomers.map((c) {
+                        return InkWell(
+                          onTap: () => _applyCustomer(c),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${c.name} • ${c.phone}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: AppTheme.textWhite,
+                                        ),
+                                      ),
+                                      if (c.address.isNotEmpty)
+                                        Text(
+                                          c.address,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppTheme.textMuted,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.moneyGreen,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'USA (${c.ordersCount})',
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+
               if (_deliveryType == DeliveryType.consegna) ...[
                 const SizedBox(height: 10),
                 TextField(
                   controller: _addressCtrl,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(
                     labelText: 'Indirizzo di consegna *',
                     prefixIcon: Icon(Icons.location_on_outlined),

@@ -1,26 +1,89 @@
 import 'package:flutter/material.dart';
 
-enum UserRole {
-  titolare('titolare', 'Titolare'),
-  dipendente('dipendente', 'Dipendente'),
-  rider1('rider_1', 'Rider 1'),
-  rider2('rider_2', 'Rider 2');
+class UserRole {
+  static const String titolare = 'titolare';
+  static const String dipendente = 'dipendente';
+  static const String rider1 = 'rider_1';
+  static const String rider2 = 'rider_2';
 
-  final String dbValue;
-  final String label;
-  const UserRole(this.dbValue, this.label);
+  static bool isRiderRole(String role) => role.startsWith('rider_');
 
-  static UserRole fromDb(String value) {
-    return UserRole.values.firstWhere(
-          (e) => e.dbValue == value,
-      orElse: () => UserRole.dipendente,
+  static int riderNumber(String role) {
+    if (!isRiderRole(role)) return 999;
+    return int.tryParse(role.replaceFirst('rider_', '')) ?? 999;
+  }
+
+  static String defaultLabel(String role) {
+    switch (role) {
+      case titolare:
+        return 'Titolare';
+      case dipendente:
+        return 'Dipendente';
+      default:
+        if (isRiderRole(role)) {
+          final numPart = role.replaceFirst('rider_', '');
+          return 'Rider $numPart';
+        }
+        return role;
+    }
+  }
+}
+
+class UserProfile {
+  final String id;
+  final String role;
+  final String displayName;
+  final bool isActive;
+
+  const UserProfile({
+    required this.id,
+    required this.role,
+    required this.displayName,
+    this.isActive = true,
+  });
+
+  bool get isOwner => role == UserRole.titolare;
+  bool get isDipendente => role == UserRole.dipendente;
+  bool get isRider => UserRole.isRiderRole(role);
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) {
+    final role = json['role'] as String? ?? UserRole.dipendente;
+    final rawName = (json['display_name'] as String? ?? '').trim();
+    return UserProfile(
+      id: (json['id'] ?? role).toString(),
+      role: role,
+      displayName: rawName.isNotEmpty ? rawName : UserRole.defaultLabel(role),
+      isActive: json['is_active'] as bool? ?? true,
     );
   }
+
+  static List<UserProfile> fallbackDefaults() => const [
+    UserProfile(
+      id: 'titolare',
+      role: UserRole.titolare,
+      displayName: 'Titolare',
+    ),
+    UserProfile(
+      id: 'dipendente',
+      role: UserRole.dipendente,
+      displayName: 'Dipendente',
+    ),
+    UserProfile(
+      id: 'rider_1',
+      role: UserRole.rider1,
+      displayName: 'Rider 1',
+    ),
+    UserProfile(
+      id: 'rider_2',
+      role: UserRole.rider2,
+      displayName: 'Rider 2',
+    ),
+  ];
 }
 
 class AppUserSession {
   final String id;
-  final UserRole role;
+  final String role;
   final String displayName;
 
   const AppUserSession({
@@ -30,8 +93,38 @@ class AppUserSession {
   });
 
   bool get isOwner => role == UserRole.titolare;
-  bool get isStaffOrOwner =>
-      role == UserRole.titolare || role == UserRole.dipendente;
+  bool get isDipendente => role == UserRole.dipendente;
+  bool get isStaffOrOwner => isOwner || isDipendente;
+  bool get isRider => UserRole.isRiderRole(role);
+}
+
+class RiderRates {
+  final double weekdayBaseFee;
+  final double saturdayBaseFee;
+  final double perDeliveryBonus;
+
+  const RiderRates({
+    this.weekdayBaseFee = 15.0,
+    this.saturdayBaseFee = 20.0,
+    this.perDeliveryBonus = 2.0,
+  });
+
+  double baseFeeForDate(DateTime date) {
+    return date.weekday == DateTime.saturday
+        ? saturdayBaseFee
+        : weekdayBaseFee;
+  }
+
+  factory RiderRates.fromJson(Map<String, dynamic> json) {
+    return RiderRates(
+      weekdayBaseFee:
+      (json['weekday_base_fee'] as num?)?.toDouble() ?? 15.0,
+      saturdayBaseFee:
+      (json['saturday_base_fee'] as num?)?.toDouble() ?? 20.0,
+      perDeliveryBonus:
+      (json['per_delivery_bonus'] as num?)?.toDouble() ?? 2.0,
+    );
+  }
 }
 
 enum OrderSource {
@@ -356,9 +449,26 @@ class PizzeriaOrder {
           assignedRider != null;
 }
 
+class SavedCustomer {
+  final String name;
+  final String phone;
+  final String address;
+  final int ordersCount;
+  final DateTime lastOrderAt;
+
+  const SavedCustomer({
+    required this.name,
+    required this.phone,
+    required this.address,
+    required this.ordersCount,
+    required this.lastOrderAt,
+  });
+}
+
 class RiderCompensationSummary {
   final String riderRole;
   final String riderName;
+  final bool isActive;
   final int shiftDaysCount;
   final double baseFeesTotal;
   final int completedDeliveriesCount;
@@ -367,6 +477,7 @@ class RiderCompensationSummary {
   const RiderCompensationSummary({
     required this.riderRole,
     required this.riderName,
+    this.isActive = true,
     required this.shiftDaysCount,
     required this.baseFeesTotal,
     required this.completedDeliveriesCount,

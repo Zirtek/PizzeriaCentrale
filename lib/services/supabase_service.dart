@@ -9,28 +9,126 @@ class SupabaseService {
   final SupabaseClient _client = Supabase.instance.client;
   bool _didSplitCombinedDrinks = false;
 
-  Future<AppUserSession?> loginWithPin(UserRole role, String pin) async {
+  Future<AppUserSession?> loginWithPin(String role, String pin) async {
     final response = await _client.rpc(
       'verify_pizzeria_pin',
-      params: {'p_role': role.dbValue, 'p_pin': pin},
+      params: {'p_role': role, 'p_pin': pin},
     );
 
     if (response is List && response.isNotEmpty) {
       final row = Map<String, dynamic>.from(response.first as Map);
       return AppUserSession(
-        id: row['id'] as String,
-        role: UserRole.fromDb(row['role'] as String),
+        id: row['id'].toString(),
+        role: row['role'] as String,
         displayName: row['display_name'] as String,
       );
     }
     return null;
   }
 
-  Future<void> updateUserPin(UserRole role, String newPin) async {
+  Future<void> updateUserPin(String role, String newPin) async {
     await _client.rpc(
       'update_pizzeria_pin',
-      params: {'p_role': role.dbValue, 'p_new_pin': newPin},
+      params: {'p_role': role, 'p_new_pin': newPin},
     );
+  }
+
+  /// Carica tutti i profili configurati (Titolare, Dipendente, Rider 1..N)
+  Future<List<UserProfile>> fetchUserProfiles({
+    bool includeInactive = false,
+  }) async {
+    try {
+      final response = await _client.rpc('get_pizzeria_users');
+      if (response is List && response.isNotEmpty) {
+        final profiles = response
+            .map((e) =>
+            UserProfile.fromJson(Map<String, dynamic>.from(e as Map)))
+            .where((p) => includeInactive || p.isActive)
+            .toList();
+        if (profiles.isNotEmpty) return profiles;
+      }
+    } catch (_) {
+      try {
+        final rows = await _client
+            .from('pizzeria_users')
+            .select('id, role, display_name');
+        final profiles = (rows as List)
+            .map((e) =>
+            UserProfile.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList()
+          ..sort((a, b) => _roleSortOrder(a.role).compareTo(_roleSortOrder(b.role)));
+        if (profiles.isNotEmpty) return profiles;
+      } catch (_) {}
+    }
+    return UserProfile.fallbackDefaults();
+  }
+
+  int _roleSortOrder(String role) {
+    if (role == UserRole.titolare) return 1;
+    if (role == UserRole.dipendente) return 2;
+    if (UserRole.isRiderRole(role)) return 10 + UserRole.riderNumber(role);
+    return 999;
+  }
+
+  /// Crea un nuovo rider (es. rider_3) o aggiorna nome/PIN di un rider esistente
+  Future<void> upsertRiderProfile({
+    required String role,
+    required String displayName,
+    String? pin,
+  }) async {
+    await _client.rpc(
+      'upsert_pizzeria_rider',
+      params: {
+        'p_role': role,
+        'p_display_name': displayName.trim(),
+        'p_pin': pin?.trim(),
+      },
+    );
+  }
+
+  /// Attiva o disattiva un profilo rider/dipendente
+  Future<void> setUserActive(String role, bool isActive) async {
+    await _client.rpc(
+      'set_pizzeria_user_active',
+      params: {
+        'p_role': role,
+        'p_is_active': isActive,
+      },
+    );
+  }
+
+  /// Elimina un profilo rider dal database
+  Future<void> deleteRiderProfile(String role) async {
+    await _client.rpc(
+      'delete_pizzeria_rider',
+      params: {'p_role': role},
+    );
+  }
+
+  /// Legge le tariffe configurate per i rider (feriale, sabato, bonus consegna)
+  Future<RiderRates> fetchRiderRates() async {
+    try {
+      final row = await _client
+          .from('pizzeria_settings')
+          .select()
+          .eq('id', 1)
+          .maybeSingle();
+      if (row != null) {
+        return RiderRates.fromJson(Map<String, dynamic>.from(row));
+      }
+    } catch (_) {}
+    return const RiderRates();
+  }
+
+  /// Salva le tariffe rider su Supabase
+  Future<void> updateRiderRates(RiderRates rates) async {
+    await _client.from('pizzeria_settings').upsert({
+      'id': 1,
+      'weekday_base_fee': rates.weekdayBaseFee,
+      'saturday_base_fee': rates.saturdayBaseFee,
+      'per_delivery_bonus': rates.perDeliveryBonus,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
   }
 
   Stream<List<PizzeriaOrder>> watchOrders() {
@@ -39,6 +137,81 @@ class SupabaseService {
         .stream(primaryKey: ['id'])
         .order('scheduled_for', ascending: true)
         .map((rows) => rows.map((r) => PizzeriaOrder.fromJson(r)).toList());
+  }
+
+  /// Estrae la rubrica dei clienti abituali dallo storico ordini,
+  /// raggruppando per numero di telefono normalizzato.
+  Future<List<SavedCustomer>> fetchSavedCustomers() async {
+    final rows = await _client
+        .from('pizzeria_orders')
+        .select('customer_name, customer_phone, delivery_address, created_at')
+        .order('created_at', ascending: false);
+
+    final Map<String, _CustomerAccumulator> byKey = {};
+
+    for (final raw in (rows as List)) {
+      final row = Map<String, dynamic>.from(raw as Map);
+      final name = (row['customer_name'] as String? ?? '').trim();
+      final phone = (row['customer_phone'] as String? ?? '').trim();
+      final address = (row['delivery_address'] as String? ?? '').trim();
+      final createdAtStr = row['created_at'] as String?;
+      final createdAt = createdAtStr != null
+          ? DateTime.parse(createdAtStr).toLocal()
+          : DateTime.now();
+
+      final normalizedPhone = normalizePhone(phone);
+      if (normalizedPhone.isEmpty) continue;
+
+      final existing = byKey[normalizedPhone];
+      if (existing == null) {
+        byKey[normalizedPhone] = _CustomerAccumulator(
+          name: name,
+          phone: phone,
+          address: address,
+          ordersCount: 1,
+          lastOrderAt: createdAt,
+        );
+      } else {
+        existing.ordersCount += 1;
+        if (existing.name.isEmpty && name.isNotEmpty) {
+          existing.name = name;
+        }
+        if (existing.address.isEmpty && address.isNotEmpty) {
+          existing.address = address;
+        }
+      }
+    }
+
+    final customers = byKey.values
+        .where((c) => c.name.isNotEmpty)
+        .map(
+          (c) => SavedCustomer(
+        name: c.name,
+        phone: c.phone,
+        address: c.address,
+        ordersCount: c.ordersCount,
+        lastOrderAt: c.lastOrderAt,
+      ),
+    )
+        .toList();
+
+    customers.sort((a, b) {
+      final byCount = b.ordersCount.compareTo(a.ordersCount);
+      if (byCount != 0) return byCount;
+      return b.lastOrderAt.compareTo(a.lastOrderAt);
+    });
+
+    return customers;
+  }
+
+  static String normalizePhone(String raw) {
+    var digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.startsWith('0039') && digits.length > 6) {
+      digits = digits.substring(4);
+    } else if (digits.startsWith('39') && digits.length >= 11) {
+      digits = digits.substring(2);
+    }
+    return digits;
   }
 
   Stream<List<MenuItemModel>> watchMenu() {
@@ -129,6 +302,49 @@ class SupabaseService {
       'is_paid': isPaid,
       'status': OrderStatus.nuovoOrdine.dbValue,
     });
+  }
+
+  /// Aggiorna un ordine esistente (orario, dati cliente, prodotti, note, pagamento)
+  Future<void> updateOrder({
+    required String orderId,
+    required DateTime scheduledFor,
+    required String customerName,
+    required String customerPhone,
+    required String deliveryAddress,
+    required DeliveryType deliveryType,
+    required OrderSource source,
+    required List<OrderLineItem> items,
+    required String notes,
+    required double totalAmount,
+    required PaymentMethod paymentMethod,
+    required bool isPaid,
+  }) async {
+    final needsInternalRider =
+        deliveryType == DeliveryType.consegna && source.usesInternalRiders;
+
+    final updateData = <String, dynamic>{
+      'scheduled_for': scheduledFor.toUtc().toIso8601String(),
+      'customer_name': customerName.trim(),
+      'customer_phone': customerPhone.trim(),
+      'delivery_address':
+      deliveryType == DeliveryType.consegna ? deliveryAddress.trim() : '',
+      'delivery_type': deliveryType.dbValue,
+      'source': source.dbValue,
+      'items': items.map((e) => e.toJson()).toList(),
+      'notes': notes.trim(),
+      'total_amount': totalAmount,
+      'payment_method': paymentMethod.dbValue,
+      'is_paid': isPaid,
+    };
+
+    if (!needsInternalRider) {
+      updateData['assigned_rider'] = null;
+    }
+
+    await _client
+        .from('pizzeria_orders')
+        .update(updateData)
+        .eq('id', orderId);
   }
 
   /// Il rider può prendere in carico SOLO se l'ordine è già stato segnato PRONTO
@@ -244,9 +460,12 @@ class SupabaseService {
   Future<RiderCompensationSummary> calculateRiderCompensation({
     required String riderRole,
     required String riderName,
+    bool isActive = true,
     required DateTime fromDate,
     required DateTime toDate,
+    RiderRates? rates,
   }) async {
+    final activeRates = rates ?? await fetchRiderRates();
     final startDay = DateTime(fromDate.year, fromDate.month, fromDate.day);
     final endDay = DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59);
 
@@ -266,7 +485,7 @@ class SupabaseService {
 
     double baseFees = 0.0;
     for (final d in shiftDates) {
-      baseFees += d.weekday == DateTime.saturday ? 20.0 : 15.0;
+      baseFees += activeRates.baseFeeForDate(d);
     }
 
     final ordersRes = await _client
@@ -281,15 +500,32 @@ class SupabaseService {
         .lte('scheduled_for', endDay.toUtc().toIso8601String());
 
     final deliveriesCount = (ordersRes as List).length;
-    final bonusTotal = deliveriesCount * 2.0;
+    final bonusTotal = deliveriesCount * activeRates.perDeliveryBonus;
 
     return RiderCompensationSummary(
       riderRole: riderRole,
       riderName: riderName,
+      isActive: isActive,
       shiftDaysCount: shiftDates.length,
       baseFeesTotal: baseFees,
       completedDeliveriesCount: deliveriesCount,
       deliveriesBonusTotal: bonusTotal,
     );
   }
+}
+
+class _CustomerAccumulator {
+  String name;
+  final String phone;
+  String address;
+  int ordersCount;
+  final DateTime lastOrderAt;
+
+  _CustomerAccumulator({
+    required this.name,
+    required this.phone,
+    required this.address,
+    required this.ordersCount,
+    required this.lastOrderAt,
+  });
 }
