@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
+import '../services/ready_order_alert_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 
@@ -23,11 +25,36 @@ class _RiderScreenState extends State<RiderScreen> {
   bool _shiftRegisteredToday = false;
   bool _loadingShift = true;
   RiderRates _rates = const RiderRates();
+  Timer? _clockTimer;
+
+  // Traccia gli stati noti degli ordini per rilevare in tempo reale il passaggio a "Pronto"
+  Map<String, OrderStatus>? _knownOrderStatuses;
+  List<PizzeriaOrder> _newlyReadyAlerts = [];
 
   @override
   void initState() {
     super.initState();
     _loadInitialData();
+    _clockTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
+  bool _isBeforeShiftStart(DateTime dt) {
+    final start = DateTime(dt.year, dt.month, dt.day, 18, 30);
+    return dt.isBefore(start);
+  }
+
+  bool _canStartShiftAt(DateTime dt) {
+    final start = DateTime(dt.year, dt.month, dt.day, 18, 30);
+    final end = DateTime(dt.year, dt.month, dt.day, 22, 0);
+    return !dt.isBefore(start) && dt.isBefore(end);
   }
 
   Future<void> _loadInitialData() async {
@@ -45,21 +72,139 @@ class _RiderScreenState extends State<RiderScreen> {
   }
 
   Future<void> _startShift() async {
-    await SupabaseService.instance
-        .registerRiderShift(widget.session.role, DateTime.now());
+    final now = DateTime.now();
+    if (!_canStartShiftAt(now)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+            Text('Puoi iniziare il turno solo dalle 18:30 alle 22:00.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    await SupabaseService.instance.registerRiderShift(widget.session.role, now);
     await _loadInitialData();
+  }
+
+  void _checkReadyTransitions(List<PizzeriaOrder> todayDeliveries) {
+    final currentMap = <String, OrderStatus>{
+      for (final o in todayDeliveries) o.id: o.status,
+    };
+
+    // Al primo caricamento memorizza lo stato iniziale senza suonare per ordini già pronti
+    if (_knownOrderStatuses == null) {
+      _knownOrderStatuses = currentMap;
+      return;
+    }
+
+    final becameReady = <PizzeriaOrder>[];
+    for (final order in todayDeliveries) {
+      if (order.assignedRider == null && order.status == OrderStatus.pronto) {
+        final previousStatus = _knownOrderStatuses![order.id];
+        if (previousStatus != OrderStatus.pronto) {
+          becameReady.add(order);
+        }
+      }
+    }
+
+    _knownOrderStatuses = currentMap;
+
+    if (becameReady.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ReadyOrderAlertService.instance.triggerOrderReadyAlert();
+        setState(() {
+          final existingIds = _newlyReadyAlerts.map((e) => e.id).toSet();
+          for (final o in becameReady) {
+            if (!existingIds.contains(o.id)) {
+              _newlyReadyAlerts.insert(0, o);
+            }
+          }
+        });
+      });
+    }
+  }
+
+  Future<void> _quickClaimFromBanner(PizzeriaOrder order) async {
+    if (_loadingShift || !_shiftRegisteredToday) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Devi prima premere "INIZIA TURNO" in alto.'),
+        ),
+      );
+      return;
+    }
+
+    final claimed = await SupabaseService.instance.claimDelivery(
+      order.id,
+      widget.session.role,
+    );
+    if (!mounted) return;
+    setState(() {
+      _newlyReadyAlerts.removeWhere((o) => o.id == order.id);
+    });
+    if (!claimed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Consegna già presa in carico da un altro rider.'),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final today = DateTime.now();
+    final now = DateTime.now();
     final myRoleDb = widget.session.role;
+    final isBefore1830 = _isBeforeShiftStart(now);
+    final canStartShiftNow = _canStartShiftAt(now);
     final hasActiveShift = !_loadingShift && _shiftRegisteredToday;
+    final isMuted = ReadyOrderAlertService.instance.isMuted;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Area ${widget.session.displayName}'),
         actions: [
+          IconButton(
+            tooltip: isMuted
+                ? 'Audio disattivato (tocca per attivare e provare)'
+                : 'Prova suono avviso',
+            icon: Icon(
+              isMuted ? Icons.volume_off : Icons.volume_up,
+              color: isMuted ? AppTheme.toStartRed : AppTheme.toCompleteYellow,
+            ),
+            onPressed: () async {
+              if (isMuted) {
+                setState(() => ReadyOrderAlertService.instance.setMuted(false));
+              }
+              await ReadyOrderAlertService.instance.triggerOrderReadyAlert();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  duration: Duration(seconds: 2),
+                  content: Text('Avviso sonoro "Pronto" attivo (tieni alto il volume)'),
+                ),
+              );
+            },
+            onLongPress: () {
+              setState(() {
+                ReadyOrderAlertService.instance.setMuted(!isMuted);
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  duration: const Duration(seconds: 2),
+                  content: Text(
+                    !isMuted
+                        ? 'Suono avvisi silenziato (resta attiva la vibrazione)'
+                        : 'Suono avvisi riattivato',
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Aggiorna tariffe e turno',
             icon: const Icon(Icons.refresh),
@@ -80,12 +225,24 @@ class _RiderScreenState extends State<RiderScreen> {
           }
 
           final todayDeliveries = snapshot.data!.where((o) {
-            final sameDay = o.scheduledFor.year == today.year &&
-                o.scheduledFor.month == today.month &&
-                o.scheduledFor.day == today.day;
+            final sameDay = o.scheduledFor.year == now.year &&
+                o.scheduledFor.month == now.month &&
+                o.scheduledFor.day == now.day;
             return sameDay && o.needsInternalRider;
           }).toList()
             ..sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
+
+          _checkReadyTransitions(todayDeliveries);
+
+          // Mantieni nel banner solo gli ordini ancora effettivamente PRONTI e non assegnati
+          final activeBannerAlerts = _newlyReadyAlerts.where((alertOrder) {
+            return todayDeliveries.any(
+                  (live) =>
+              live.id == alertOrder.id &&
+                  live.assignedRider == null &&
+                  live.status == OrderStatus.pronto,
+            );
+          }).toList();
 
           // 1. Consegne prese in carico da QUESTO rider e ancora in corso
           final myActiveOrders = todayDeliveries
@@ -94,7 +251,7 @@ class _RiderScreenState extends State<RiderScreen> {
               o.status != OrderStatus.completato)
               .toList();
 
-          // 2. Tutte le consegne del giorno non ancora prese in carico (sia NUOVO ORDINE che PRONTO)
+          // 2. Tutte le consegne del giorno non ancora prese in carico
           final overviewOrders = todayDeliveries
               .where((o) =>
           o.assignedRider == null &&
@@ -113,7 +270,7 @@ class _RiderScreenState extends State<RiderScreen> {
               .toList();
 
           final baseQuota =
-          _shiftRegisteredToday ? _rates.baseFeeForDate(today) : 0.0;
+          _shiftRegisteredToday ? _rates.baseFeeForDate(now) : 0.0;
           final deliveriesBonus =
               myCompletedOrders.length * _rates.perDeliveryBonus;
           final todayEarnings = baseQuota + deliveriesBonus;
@@ -130,7 +287,117 @@ class _RiderScreenState extends State<RiderScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
-              // Riepilogo Compenso Personale + Cassa Consegne (Conti soldi in verde)
+              // Banner di allerta immediata quando uno o più ordini diventano PRONTI
+              if (activeBannerAlerts.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.toCompleteYellow,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.toCompleteYellow.withOpacity(0.35),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.notifications_active,
+                              color: Colors.black, size: 22),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              activeBannerAlerts.length == 1
+                                  ? 'ORDINE PRONTO PER LA CONSEGNA!'
+                                  : '${activeBannerAlerts.length} ORDINI PRONTI PER LA CONSEGNA!',
+                              style: const TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () =>
+                                setState(() => _newlyReadyAlerts.clear()),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.close,
+                                  color: Colors.black87, size: 20),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ...activeBannerAlerts.map((o) {
+                        final t = DateFormat('HH:mm').format(o.scheduledFor);
+                        return Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.88),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '#${o.orderNumber} ($t) • ${o.customerName}',
+                                      style: const TextStyle(
+                                        color: AppTheme.toCompleteYellow,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    if (o.deliveryAddress.isNotEmpty)
+                                      Text(
+                                        o.deliveryAddress,
+                                        style: const TextStyle(
+                                          color: AppTheme.textWhite,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.moneyGreen,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                ),
+                                onPressed: () => _quickClaimFromBanner(o),
+                                child: const Text(
+                                  'PRENDI',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Riepilogo Compenso Personale + Cassa Consegne
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -144,34 +411,37 @@ class _RiderScreenState extends State<RiderScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'IL TUO GUADAGNO OGGI',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: AppTheme.textMuted,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'IL TUO GUADAGNO OGGI',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textMuted,
+                                ),
                               ),
-                            ),
-                            Text(
-                              '€ ${todayEarnings.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w900,
-                                color: AppTheme.moneyGreen,
+                              Text(
+                                '€ ${todayEarnings.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 30,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.moneyGreen,
+                                ),
                               ),
-                            ),
-                            Text(
-                              'Turno: € ${baseQuota.toStringAsFixed(2)} + ${myCompletedOrders.length} cons. (€ ${deliveriesBonus.toStringAsFixed(2)})',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.textMuted,
+                              Text(
+                                'Turno: € ${baseQuota.toStringAsFixed(2)} + ${myCompletedOrders.length} cons. (€ ${deliveriesBonus.toStringAsFixed(2)})',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textMuted,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         if (!_loadingShift)
                           _shiftRegisteredToday
                               ? const Chip(
@@ -185,8 +455,15 @@ class _RiderScreenState extends State<RiderScreen> {
                             ),
                           )
                               : ElevatedButton(
-                            onPressed: _startShift,
-                            child: const Text('INIZIA TURNO'),
+                            onPressed:
+                            canStartShiftNow ? _startShift : null,
+                            child: Text(
+                              canStartShiftNow
+                                  ? 'INIZIA TURNO'
+                                  : (isBefore1830
+                                  ? 'DALLE 18:30'
+                                  : 'TURNO CHIUSO'),
+                            ),
                           ),
                       ],
                     ),
@@ -257,15 +534,22 @@ class _RiderScreenState extends State<RiderScreen> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppTheme.toCompleteYellow),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.info_outline,
-                          color: AppTheme.toCompleteYellow, size: 20),
-                      SizedBox(width: 8),
+                      Icon(
+                        isBefore1830 ? Icons.schedule : Icons.info_outline,
+                        color: AppTheme.toCompleteYellow,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Premi "INIZIA TURNO" in alto per abilitare la presa in carico delle consegne.',
-                          style: TextStyle(
+                          isBefore1830
+                              ? 'Il turno può essere iniziato dalle 18:30 alle 22:00.'
+                              : (canStartShiftNow
+                              ? 'Premi "INIZIA TURNO" in alto per abilitare la presa in carico delle consegne.'
+                              : 'Fascia turno terminata (18:30 - 22:00).'),
+                          style: const TextStyle(
                             color: AppTheme.toCompleteYellow,
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
@@ -277,7 +561,7 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ],
 
-              // SEZIONE 1: Consegne prese in carico da me in questo momento (Giallo: da completare)
+              // SEZIONE 1: Consegne prese in carico da me in questo momento
               if (myActiveOrders.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Row(
@@ -371,7 +655,7 @@ class _RiderScreenState extends State<RiderScreen> {
                   ),
                 ),
 
-              // SEZIONE 3: Consegne completate oggi (Verde)
+              // SEZIONE 3: Consegne completate oggi
               if (myCompletedOrders.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 Text(
@@ -424,7 +708,8 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
     if (!widget.hasStartedShift) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Devi prima premere "INIZIA TURNO" in alto.'),
+          content: Text(
+              'Devi prima premere "INIZIA TURNO" (dalle 18:30 alle 22:00).'),
         ),
       );
       return;

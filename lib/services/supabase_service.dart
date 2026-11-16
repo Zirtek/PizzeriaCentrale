@@ -56,7 +56,8 @@ class SupabaseService {
             .map((e) =>
             UserProfile.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList()
-          ..sort((a, b) => _roleSortOrder(a.role).compareTo(_roleSortOrder(b.role)));
+          ..sort((a, b) =>
+              _roleSortOrder(a.role).compareTo(_roleSortOrder(b.role)));
         if (profiles.isNotEmpty) return profiles;
       } catch (_) {}
     }
