@@ -522,26 +522,6 @@ class SupabaseService {
     return shift != null;
   }
 
-  Future<void> upsertPushToken({
-    required String riderRole,
-    required String platform,
-    required String tokenOrEndpoint,
-    String? p256dh,
-    String? auth,
-  }) async {
-    await _client.from('pizzeria_push_tokens').upsert(
-      {
-        'rider_role': riderRole,
-        'platform': platform,
-        'token_or_endpoint': tokenOrEndpoint,
-        'p256dh': p256dh,
-        'auth': auth,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      onConflict: 'token_or_endpoint',
-    );
-  }
-
   Future<RiderCompensationSummary> calculateRiderCompensation({
     required String riderRole,
     required String riderName,

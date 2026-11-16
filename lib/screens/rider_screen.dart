@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
-import '../services/push_notification_service.dart';
 import '../services/ready_order_alert_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
@@ -28,9 +27,6 @@ class _RiderScreenState extends State<RiderScreen> {
   RiderRates _rates = const RiderRates();
   Timer? _clockTimer;
 
-  bool _pushActive = false;
-  bool _enablingPush = false;
-
   Map<String, OrderStatus>? _knownOrderStatuses;
   List<PizzeriaOrder> _newlyReadyAlerts = [];
 
@@ -38,7 +34,6 @@ class _RiderScreenState extends State<RiderScreen> {
   void initState() {
     super.initState();
     _loadInitialData();
-    _syncExistingPushIfGranted();
     _clockTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) setState(() {});
     });
@@ -48,45 +43,6 @@ class _RiderScreenState extends State<RiderScreen> {
   void dispose() {
     _clockTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _syncExistingPushIfGranted() async {
-    if (await PushNotificationService.instance.isGranted()) {
-      final ok = await PushNotificationService.instance
-          .enableAndSyncForRider(widget.session.role);
-      if (mounted) {
-        setState(() => _pushActive = ok);
-      }
-    }
-  }
-
-  Future<void> _enablePushNotifications() async {
-    setState(() => _enablingPush = true);
-    try {
-      final ok = await PushNotificationService.instance
-          .enableAndSyncForRider(widget.session.role);
-      if (!mounted) return;
-      setState(() => _pushActive = ok);
-
-      if (ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Notifiche attivate! Riceverai avvisi anche a schermo spento.'),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            duration: Duration(seconds: 5),
-            content: Text(
-                'Permesso non concesso. Su iPhone aggiungi prima il sito alla schermata Home, poi riprova.'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _enablingPush = false);
-    }
   }
 
   bool _isBeforeShiftStart(DateTime dt) {
@@ -133,9 +89,6 @@ class _RiderScreenState extends State<RiderScreen> {
       now,
       startingFloat: 0.0,
     );
-    if (!_pushActive) {
-      await _enablePushNotifications();
-    }
     await _loadInitialData();
   }
 
@@ -371,20 +324,6 @@ class _RiderScreenState extends State<RiderScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: _pushActive
-                ? 'Notifiche push attive'
-                : 'Attiva notifiche push',
-            icon: Icon(
-              _pushActive
-                  ? Icons.notifications_active
-                  : Icons.notification_add_outlined,
-              color: _pushActive
-                  ? AppTheme.moneyGreen
-                  : AppTheme.toCompleteYellow,
-            ),
-            onPressed: _pushActive ? null : _enablePushNotifications,
-          ),
-          IconButton(
             tooltip: isMuted
                 ? 'Audio disattivato (tocca per attivare)'
                 : 'Prova suono avviso (tieni premuto per silenziare)',
@@ -508,7 +447,7 @@ class _RiderScreenState extends State<RiderScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
-              // Banner allerta ordine pronto
+              // Banner allerta ordine pronto (in-app)
               if (activeBannerAlerts.isNotEmpty && !isShiftClosed)
                 Container(
                   width: double.infinity,
@@ -603,55 +542,6 @@ class _RiderScreenState extends State<RiderScreen> {
                           ),
                         );
                       }),
-                    ],
-                  ),
-                ),
-
-              // Banner push visibile solo se non ancora attivate
-              if (!_pushActive)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.toCompleteYellow),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.notification_add,
-                          color: AppTheme.toCompleteYellow, size: 19),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Attiva le notifiche a schermo spento',
-                          style: TextStyle(
-                            color: AppTheme.textWhite,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.toCompleteYellow,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                        ),
-                        onPressed:
-                        _enablingPush ? null : _enablePushNotifications,
-                        child: Text(
-                          _enablingPush ? '...' : 'ATTIVA',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),

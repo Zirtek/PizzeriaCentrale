@@ -4,7 +4,6 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'theme/app_theme.dart';
 import 'models/models.dart';
-import 'services/push_notification_service.dart';
 import 'services/session_storage_service.dart';
 import 'services/supabase_service.dart';
 import 'screens/pin_login_screen.dart';
@@ -23,8 +22,6 @@ Future<void> main() async {
     url: supabaseUrl,
     anonKey: supabaseAnonKey,
   );
-
-  await PushNotificationService.instance.initialize();
 
   final restoredSession = await SessionStorageService.instance.loadSession();
 
