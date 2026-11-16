@@ -48,7 +48,7 @@ class _RiderScreenState extends State<RiderScreen> {
 
   double _todayBaseFee() {
     final wd = DateTime.now().weekday;
-    return (wd == DateTime.saturday || wd == DateTime.sunday) ? 18.0 : 15.0;
+    return wd == DateTime.saturday ? 20.0 : 15.0;
   }
 
   @override

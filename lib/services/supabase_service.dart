@@ -266,9 +266,7 @@ class SupabaseService {
 
     double baseFees = 0.0;
     for (final d in shiftDates) {
-      final isWeekend =
-          d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
-      baseFees += isWeekend ? 18.0 : 15.0;
+      baseFees += d.weekday == DateTime.saturday ? 20.0 : 15.0;
     }
 
     final ordersRes = await _client
