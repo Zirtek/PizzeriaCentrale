@@ -384,9 +384,14 @@ class _AgendaScreenState extends State<AgendaScreen> {
                       padding: const EdgeInsets.fromLTRB(12, 4, 12, 92),
                       itemCount: visibleOrders.length,
                       itemBuilder: (context, index) {
+                        final order = visibleOrders[index];
+                        final canDelete = widget.session.isOwner ||
+                            (widget.session.role == UserRole.dipendente &&
+                                order.status != OrderStatus.completato);
+
                         return _OrderAgendaCard(
-                          order: visibleOrders[index],
-                          canDeleteOrder: widget.session.isStaffOrOwner,
+                          order: order,
+                          canDeleteOrder: canDelete,
                         );
                       },
                     );
@@ -942,7 +947,7 @@ class _OrderAgendaCard extends StatelessWidget {
                 ),
               ),
 
-            // Riga finale: Totale + Stato Pagamento + Elimina (Titolare e Dipendente) + Stato
+            // Riga finale: Totale + Stato Pagamento + Elimina (Titolare sempre, Dipendente solo se non completato) + Stato
             Row(
               children: [
                 Column(

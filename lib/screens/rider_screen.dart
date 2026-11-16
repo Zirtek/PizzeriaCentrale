@@ -55,6 +55,7 @@ class _RiderScreenState extends State<RiderScreen> {
   Widget build(BuildContext context) {
     final today = DateTime.now();
     final myRoleDb = widget.session.role.dbValue;
+    final hasActiveShift = !_loadingShift && _shiftRegisteredToday;
 
     return Scaffold(
       appBar: AppBar(
@@ -237,6 +238,38 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ),
 
+              // Avviso se il turno non è stato ancora avviato
+              if (!_loadingShift && !_shiftRegisteredToday) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.darkYellowTint,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.toCompleteYellow),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          color: AppTheme.toCompleteYellow, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Premi "INIZIA TURNO" in alto per abilitare la presa in carico delle consegne.',
+                          style: TextStyle(
+                            color: AppTheme.toCompleteYellow,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // SEZIONE 1: Consegne prese in carico da me in questo momento (Giallo: da completare)
               if (myActiveOrders.isNotEmpty) ...[
                 const SizedBox(height: 16),
@@ -261,7 +294,7 @@ class _RiderScreenState extends State<RiderScreen> {
                     order: order,
                     currentRiderRole: myRoleDb,
                     isUnassignedOverview: false,
-                    onShiftAutoStarted: _checkTodayShift,
+                    hasStartedShift: hasActiveShift,
                   ),
                 ),
               ],
@@ -327,7 +360,7 @@ class _RiderScreenState extends State<RiderScreen> {
                     order: order,
                     currentRiderRole: myRoleDb,
                     isUnassignedOverview: true,
-                    onShiftAutoStarted: _checkTodayShift,
+                    hasStartedShift: hasActiveShift,
                   ),
                 ),
 
@@ -348,7 +381,7 @@ class _RiderScreenState extends State<RiderScreen> {
                     order: order,
                     currentRiderRole: myRoleDb,
                     isUnassignedOverview: false,
-                    onShiftAutoStarted: _checkTodayShift,
+                    hasStartedShift: hasActiveShift,
                   ),
                 ),
               ],
@@ -364,13 +397,13 @@ class _RiderDeliveryCard extends StatefulWidget {
   final PizzeriaOrder order;
   final String currentRiderRole;
   final bool isUnassignedOverview;
-  final VoidCallback onShiftAutoStarted;
+  final bool hasStartedShift;
 
   const _RiderDeliveryCard({
     required this.order,
     required this.currentRiderRole,
     required this.isUnassignedOverview,
-    required this.onShiftAutoStarted,
+    required this.hasStartedShift,
   });
 
   @override
@@ -381,6 +414,15 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
   bool _isBusy = false;
 
   Future<void> _takeInCharge() async {
+    if (!widget.hasStartedShift) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Devi prima premere "INIZIA TURNO" in alto.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isBusy = true);
     try {
       final claimed = await SupabaseService.instance.claimDelivery(
@@ -395,14 +437,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 'Consegna non ancora pronta o già presa dall\'altro rider.'),
           ),
         );
-        return;
       }
-
-      await SupabaseService.instance.registerRiderShift(
-        widget.currentRiderRole,
-        widget.order.scheduledFor,
-      );
-      widget.onShiftAutoStarted();
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -510,12 +545,6 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
 
     setState(() => _isBusy = true);
     try {
-      await SupabaseService.instance.registerRiderShift(
-        widget.currentRiderRole,
-        order.scheduledFor,
-      );
-      widget.onShiftAutoStarted();
-
       await SupabaseService.instance.updateOrderStatus(
         order.id,
         OrderStatus.completato,
@@ -531,8 +560,9 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
     final order = widget.order;
     final timeStr = DateFormat('HH:mm').format(order.scheduledFor);
     final isCompleted = order.status == OrderStatus.completato;
-    final isReadyToClaim =
+    final isOrderReady =
         widget.isUnassignedOverview && order.status == OrderStatus.pronto;
+    final canClaim = isOrderReady && widget.hasStartedShift;
 
     final borderColor = order.isDelayed
         ? AppTheme.toStartRed
@@ -544,7 +574,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: borderColor,
-          width: (order.isDelayed || isReadyToClaim) ? 2.2 : 1.5,
+          width: (order.isDelayed || isOrderReady) ? 2.2 : 1.5,
         ),
       ),
       child: Padding(
@@ -637,8 +667,11 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                   if (order.customerPhone.isNotEmpty)
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () =>
-                            launchUrl(Uri.parse('tel:${order.customerPhone}')),
+                        onPressed: () {
+                          final cleanPhone =
+                          order.customerPhone.replaceAll(RegExp(r'\s+'), '');
+                          launchUrl(Uri.parse('tel:$cleanPhone'));
+                        },
                         icon: const Icon(Icons.phone,
                             size: 18, color: AppTheme.moneyGreen),
                         label: const Text('CHIAMA'),
@@ -701,7 +734,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
               ),
             ),
 
-            // Attivo solo quando lo stato è PRONTO; bloccato (Rosso) quando è NUOVO ORDINE
+            // Attivo solo se lo stato è PRONTO E il rider ha iniziato il turno
             if (widget.isUnassignedOverview) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -709,14 +742,18 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                 height: 52,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isReadyToClaim
+                    backgroundColor: canClaim
                         ? AppTheme.toCompleteYellow
                         : AppTheme.surfaceElevated,
                     foregroundColor: Colors.black,
-                    disabledBackgroundColor: AppTheme.darkRedTint,
-                    disabledForegroundColor: AppTheme.toStartRed,
+                    disabledBackgroundColor: isOrderReady
+                        ? AppTheme.darkYellowTint
+                        : AppTheme.darkRedTint,
+                    disabledForegroundColor: isOrderReady
+                        ? AppTheme.toCompleteYellow
+                        : AppTheme.toStartRed,
                   ),
-                  onPressed: (!isReadyToClaim || _isBusy) ? null : _takeInCharge,
+                  onPressed: (!canClaim || _isBusy) ? null : _takeInCharge,
                   icon: _isBusy
                       ? const SizedBox(
                     width: 20,
@@ -727,17 +764,21 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                     ),
                   )
                       : Icon(
-                    isReadyToClaim
+                    canClaim
                         ? Icons.delivery_dining
-                        : Icons.schedule,
+                        : (isOrderReady
+                        ? Icons.lock_outline
+                        : Icons.schedule),
                     size: 22,
                   ),
                   label: Text(
-                    isReadyToClaim
+                    canClaim
                         ? 'PRENDI IN CARICO'
-                        : 'NUOVO ORDINE • ATTENDI "PRONTO"',
+                        : (isOrderReady
+                        ? 'INIZIA TURNO PER PRENDERE IN CARICO'
+                        : 'NUOVO ORDINE • ATTENDI "PRONTO"'),
                     style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w900),
+                        fontSize: 14, fontWeight: FontWeight.w900),
                   ),
                 ),
               ),
