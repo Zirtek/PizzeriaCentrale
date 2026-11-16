@@ -22,7 +22,7 @@ class RiderScreen extends StatefulWidget {
 }
 
 class _RiderScreenState extends State<RiderScreen> {
-  bool _shiftRegisteredToday = false;
+  RiderShiftRecord? _todayShift;
   bool _loadingShift = true;
   RiderRates _rates = const RiderRates();
   Timer? _clockTimer;
@@ -59,16 +59,111 @@ class _RiderScreenState extends State<RiderScreen> {
 
   Future<void> _loadInitialData() async {
     final results = await Future.wait([
-      SupabaseService.instance.hasRiderShiftToday(widget.session.role),
+      SupabaseService.instance.fetchTodayRiderShift(widget.session.role),
       SupabaseService.instance.fetchRiderRates(),
     ]);
     if (mounted) {
       setState(() {
-        _shiftRegisteredToday = results[0] as bool;
+        _todayShift = results[0] as RiderShiftRecord?;
         _rates = results[1] as RiderRates;
         _loadingShift = false;
       });
     }
+  }
+
+  Future<double?> _promptStartingFloatDialog({
+    required String title,
+    required String confirmLabel,
+    double initialAmount = 0.0,
+  }) async {
+    final controller = TextEditingController(
+      text: initialAmount > 0 ? initialAmount.toStringAsFixed(2) : '',
+    );
+    double selectedPreset = initialAmount;
+
+    return showDialog<double>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Inserisci i contanti ricevuti dal titolare come fondo resto per il turno:',
+                style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [0.0, 20.0, 30.0, 50.0].map((preset) {
+                  final isSelected =
+                      (selectedPreset - preset).abs() < 0.01;
+                  return ChoiceChip(
+                    label: Text(
+                      preset == 0
+                          ? '€ 0 (Nessuno)'
+                          : '€ ${preset.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: isSelected ? Colors.black : AppTheme.textWhite,
+                      ),
+                    ),
+                    selected: isSelected,
+                    selectedColor: AppTheme.moneyGreen,
+                    onSelected: (_) {
+                      setDlgState(() {
+                        selectedPreset = preset;
+                        controller.text =
+                        preset == 0 ? '0' : preset.toStringAsFixed(2);
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Fondo cassa (€)',
+                  prefixText: '€ ',
+                  hintText: '0.00',
+                ),
+                onChanged: (val) {
+                  final parsed =
+                      double.tryParse(val.trim().replaceAll(',', '.')) ?? 0.0;
+                  setDlgState(() => selectedPreset = parsed);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.moneyGreen,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () {
+                final parsed = double.tryParse(
+                  controller.text.trim().replaceAll(',', '.'),
+                ) ??
+                    0.0;
+                Navigator.pop(ctx, parsed < 0 ? 0.0 : parsed);
+              },
+              child: Text(confirmLabel),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _startShift() async {
@@ -85,8 +180,191 @@ class _RiderScreenState extends State<RiderScreen> {
       return;
     }
 
-    await SupabaseService.instance.registerRiderShift(widget.session.role, now);
+    final startingFloat = await _promptStartingFloatDialog(
+      title: 'Inizia Turno • Fondo Cassa',
+      confirmLabel: 'INIZIA TURNO',
+      initialAmount: 0.0,
+    );
+    if (startingFloat == null) return;
+
+    await SupabaseService.instance.registerRiderShift(
+      widget.session.role,
+      now,
+      startingFloat: startingFloat,
+    );
     await _loadInitialData();
+  }
+
+  Future<void> _editStartingFloat() async {
+    final shift = _todayShift;
+    if (shift == null || shift.isClosed) return;
+
+    final updatedFloat = await _promptStartingFloatDialog(
+      title: 'Modifica Fondo Cassa',
+      confirmLabel: 'SALVA FONDO',
+      initialAmount: shift.startingFloat,
+    );
+    if (updatedFloat == null) return;
+
+    await SupabaseService.instance.updateRiderStartingFloat(
+      widget.session.role,
+      DateTime.now(),
+      updatedFloat,
+    );
+    await _loadInitialData();
+  }
+
+  Future<void> _closeShiftDialog({
+    required int activeDeliveriesCount,
+    required int completedDeliveriesCount,
+    required double startingFloat,
+    required double cashFromOrders,
+    required double cardFromOrders,
+    required double onlineFromOrders,
+    required double riderEarnings,
+  }) async {
+    if (activeDeliveriesCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.toStartRed,
+          content: Text(
+            'Hai ancora $activeDeliveriesCount consegne in corso: completale o rilasciale prima di chiudere il turno.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final totalCashToHandOver = startingFloat + cashFromOrders;
+    final notesController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Chiudi Turno e Versa Cassa'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Riepilogo riconciliazione finale con il titolare:',
+                style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 12),
+              _ReconciliationRow(
+                label: 'Consegne completate',
+                value: '$completedDeliveriesCount',
+              ),
+              _ReconciliationRow(
+                label: 'Tuo compenso turno',
+                value: '€ ${riderEarnings.toStringAsFixed(2)}',
+                valueColor: AppTheme.moneyGreen,
+              ),
+              const Divider(height: 18),
+              _ReconciliationRow(
+                label: 'Fondo cassa iniziale',
+                value: '€ ${startingFloat.toStringAsFixed(2)}',
+              ),
+              _ReconciliationRow(
+                label: 'Contanti incassati (ordini)',
+                value: '€ ${cashFromOrders.toStringAsFixed(2)}',
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.darkGreenTint,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.moneyGreen, width: 1.5),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'CONTANTI FISICI DA VERSARE',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.moneyGreen,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '€ ${totalCashToHandOver.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.moneyGreen,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              _ReconciliationRow(
+                label: 'Incassato Carta / POS',
+                value: '€ ${cardFromOrders.toStringAsFixed(2)}',
+                valueColor: AppTheme.toCompleteYellow,
+              ),
+              if (onlineFromOrders > 0)
+                _ReconciliationRow(
+                  label: 'Già pagati online',
+                  value: '€ ${onlineFromOrders.toStringAsFixed(2)}',
+                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Note chiusura (opzionale)',
+                  hintText: 'Es. scontrini POS consegnati al bancone',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.moneyGreen,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.lock_clock),
+            label: const Text('CONFERMA VERSAMENTO'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await SupabaseService.instance.closeRiderShift(
+      riderRole: widget.session.role,
+      date: DateTime.now(),
+      startingFloat: startingFloat,
+      cashCollected: cashFromOrders,
+      cardCollected: cardFromOrders,
+      onlinePaid: onlineFromOrders,
+      deliveriesCount: completedDeliveriesCount,
+      riderEarnings: riderEarnings,
+      closingNotes: notesController.text,
+    );
+    await _loadInitialData();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Turno chiuso e versamento cassa registrato!'),
+      ),
+    );
   }
 
   void _checkReadyTransitions(List<PizzeriaOrder> todayDeliveries) {
@@ -94,7 +372,6 @@ class _RiderScreenState extends State<RiderScreen> {
       for (final o in todayDeliveries) o.id: o.status,
     };
 
-    // Al primo caricamento memorizza lo stato iniziale senza suonare per ordini già pronti
     if (_knownOrderStatuses == null) {
       _knownOrderStatuses = currentMap;
       return;
@@ -129,10 +406,19 @@ class _RiderScreenState extends State<RiderScreen> {
   }
 
   Future<void> _quickClaimFromBanner(PizzeriaOrder order) async {
-    if (_loadingShift || !_shiftRegisteredToday) {
+    final shift = _todayShift;
+    if (_loadingShift || shift == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Devi prima premere "INIZIA TURNO" in alto.'),
+        ),
+      );
+      return;
+    }
+    if (shift.isClosed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Il turno di oggi risulta già chiuso.'),
         ),
       );
       return;
@@ -161,7 +447,11 @@ class _RiderScreenState extends State<RiderScreen> {
     final myRoleDb = widget.session.role;
     final isBefore1830 = _isBeforeShiftStart(now);
     final canStartShiftNow = _canStartShiftAt(now);
-    final hasActiveShift = !_loadingShift && _shiftRegisteredToday;
+
+    final shift = _todayShift;
+    final hasShiftRecord = !_loadingShift && shift != null;
+    final isShiftClosed = !_loadingShift && (shift?.isClosed ?? false);
+    final canOperateShift = hasShiftRecord && !isShiftClosed;
     final isMuted = ReadyOrderAlertService.instance.isMuted;
 
     return Scaffold(
@@ -185,7 +475,7 @@ class _RiderScreenState extends State<RiderScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   duration: Duration(seconds: 2),
-                  content: Text('Avviso sonoro "Pronto" attivo (tieni alto il volume)'),
+                  content: Text('Avviso sonoro "Pronto" attivo'),
                 ),
               );
             },
@@ -234,7 +524,6 @@ class _RiderScreenState extends State<RiderScreen> {
 
           _checkReadyTransitions(todayDeliveries);
 
-          // Mantieni nel banner solo gli ordini ancora effettivamente PRONTI e non assegnati
           final activeBannerAlerts = _newlyReadyAlerts.where((alertOrder) {
             return todayDeliveries.any(
                   (live) =>
@@ -251,7 +540,7 @@ class _RiderScreenState extends State<RiderScreen> {
               o.status != OrderStatus.completato)
               .toList();
 
-          // 2. Tutte le consegne del giorno non ancora prese in carico
+          // 2. Consegne del giorno non ancora prese in carico
           final overviewOrders = todayDeliveries
               .where((o) =>
           o.assignedRider == null &&
@@ -270,15 +559,29 @@ class _RiderScreenState extends State<RiderScreen> {
               .toList();
 
           final baseQuota =
-          _shiftRegisteredToday ? _rates.baseFeeForDate(now) : 0.0;
+          hasShiftRecord ? _rates.baseFeeForDate(now) : 0.0;
           final deliveriesBonus =
               myCompletedOrders.length * _rates.perDeliveryBonus;
           final todayEarnings = baseQuota + deliveriesBonus;
 
-          final collectedFromDeliveries = myCompletedOrders
+          // Separazione analitica degli incassi per metodo di pagamento
+          final cashFromOrders = myCompletedOrders
               .where((o) =>
-          o.isPaid && o.paymentMethod != PaymentMethod.online)
+          o.isPaid && o.paymentMethod == PaymentMethod.contanti)
               .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+
+          final cardFromOrders = myCompletedOrders
+              .where(
+                  (o) => o.isPaid && o.paymentMethod == PaymentMethod.carta)
+              .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+
+          final onlineFromOrders = myCompletedOrders
+              .where(
+                  (o) => o.isPaid && o.paymentMethod == PaymentMethod.online)
+              .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+
+          final startingFloat = shift?.startingFloat ?? 0.0;
+          final totalCashToHandOver = cashFromOrders + startingFloat;
 
           final stillToCollect = myActiveOrders
               .where((o) => !o.isPaid)
@@ -288,7 +591,7 @@ class _RiderScreenState extends State<RiderScreen> {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
             children: [
               // Banner di allerta immediata quando uno o più ordini diventano PRONTI
-              if (activeBannerAlerts.isNotEmpty) ...[
+              if (activeBannerAlerts.isNotEmpty && !isShiftClosed) ...[
                 Container(
                   width: double.infinity,
                   margin: const EdgeInsets.only(bottom: 12),
@@ -397,7 +700,7 @@ class _RiderScreenState extends State<RiderScreen> {
                 ),
               ],
 
-              // Riepilogo Compenso Personale + Cassa Consegne
+              // Riepilogo Compenso Personale + Cassa Separata (Contanti / POS / Fondo)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -407,6 +710,7 @@ class _RiderScreenState extends State<RiderScreen> {
                   border: Border.all(color: AppTheme.cardBorder, width: 1.5),
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -443,87 +747,270 @@ class _RiderScreenState extends State<RiderScreen> {
                         ),
                         const SizedBox(width: 8),
                         if (!_loadingShift)
-                          _shiftRegisteredToday
-                              ? const Chip(
-                            avatar: Icon(Icons.check_circle,
-                                color: Colors.black, size: 18),
-                            label: Text('Turno attivo'),
-                            backgroundColor: AppTheme.moneyGreen,
-                            labelStyle: TextStyle(
-                              color: Colors.black,
-                              fontWeight: FontWeight.w900,
+                          if (!hasShiftRecord)
+                            ElevatedButton(
+                              onPressed:
+                              canStartShiftNow ? _startShift : null,
+                              child: Text(
+                                canStartShiftNow
+                                    ? 'INIZIA TURNO'
+                                    : (isBefore1830
+                                    ? 'DALLE 18:30'
+                                    : 'TURNO CHIUSO'),
+                              ),
+                            )
+                          else if (isShiftClosed)
+                            Chip(
+                              avatar: const Icon(Icons.lock_clock,
+                                  color: Colors.black, size: 18),
+                              label: Text(
+                                'Chiuso ${DateFormat('HH:mm').format(shift!.closedAt!)}',
+                              ),
+                              backgroundColor: AppTheme.toCompleteYellow,
+                              labelStyle: const TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            )
+                          else
+                            const Chip(
+                              avatar: Icon(Icons.check_circle,
+                                  color: Colors.black, size: 18),
+                              label: Text('Turno attivo'),
+                              backgroundColor: AppTheme.moneyGreen,
+                              labelStyle: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                          )
-                              : ElevatedButton(
-                            onPressed:
-                            canStartShiftNow ? _startShift : null,
-                            child: Text(
-                              canStartShiftNow
-                                  ? 'INIZIA TURNO'
-                                  : (isBefore1830
-                                  ? 'DALLE 18:30'
-                                  : 'TURNO CHIUSO'),
-                            ),
-                          ),
                       ],
                     ),
                     const Divider(height: 20),
+
+                    // Sezione Cassa Separata: Contanti vs Carta/POS + Fondo Cassa
                     Row(
                       children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.darkGreenTint,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: AppTheme.moneyGreen.withOpacity(0.6)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'CONTANTI ORDINI',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.textMuted,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '€ ${cashFromOrders.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.moneyGreen,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceElevated,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppTheme.cardBorder),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'CARTA / POS',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.textMuted,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '€ ${cardFromOrders.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.textWhite,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Riga Fondo cassa + Totale contanti fisici da versare
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceElevated,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.cardBorder),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  const Text(
+                                    'Fondo cassa (resti): ',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textMuted,
+                                    ),
+                                  ),
+                                  Text(
+                                    '€ ${startingFloat.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppTheme.textWhite,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (canOperateShift)
+                                InkWell(
+                                  onTap: _editStartingFloat,
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: 2),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit,
+                                            size: 14,
+                                            color: AppTheme.toCompleteYellow),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Modifica',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.toCompleteYellow,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const Divider(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text(
-                                'INCASSATI (DA VERSARE)',
+                                'CONTANTI DA VERSARE AL TITOLARE',
                                 style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppTheme.textMuted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.moneyGreen,
                                 ),
                               ),
                               Text(
-                                '€ ${collectedFromDeliveries.toStringAsFixed(2)}',
+                                '€ ${totalCashToHandOver.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 19,
                                   fontWeight: FontWeight.w900,
                                   color: AppTheme.moneyGreen,
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text(
-                                'IN CONSEGNA DA INCASSARE',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppTheme.textMuted,
+                          if (stillToCollect > 0) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'In consegna ancora da incassare:',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.toCompleteYellow,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                '€ ${stillToCollect.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppTheme.toCompleteYellow,
+                                Text(
+                                  '€ ${stillToCollect.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.toCompleteYellow,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+
+                    // Pulsante Chiusura Turno Esplicita
+                    if (canOperateShift) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.toCompleteYellow,
+                            side: const BorderSide(
+                                color: AppTheme.toCompleteYellow, width: 1.5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: () => _closeShiftDialog(
+                            activeDeliveriesCount: myActiveOrders.length,
+                            completedDeliveriesCount: myCompletedOrders.length,
+                            startingFloat: startingFloat,
+                            cashFromOrders: cashFromOrders,
+                            cardFromOrders: cardFromOrders,
+                            onlineFromOrders: onlineFromOrders,
+                            riderEarnings: todayEarnings,
+                          ),
+                          icon: const Icon(Icons.point_of_sale, size: 20),
+                          label: const Text(
+                            'CHIUDI TURNO / VERSA CASSA',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ],
                 ),
               ),
 
-              // Avviso se il turno non è stato ancora avviato
-              if (!_loadingShift && !_shiftRegisteredToday) ...[
+              // Banner stato turno (non ancora avviato oppure già chiuso)
+              if (!_loadingShift && !hasShiftRecord) ...[
                 const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
@@ -547,12 +1034,41 @@ class _RiderScreenState extends State<RiderScreen> {
                           isBefore1830
                               ? 'Il turno può essere iniziato dalle 18:30 alle 22:00.'
                               : (canStartShiftNow
-                              ? 'Premi "INIZIA TURNO" in alto per abilitare la presa in carico delle consegne.'
+                              ? 'Premi "INIZIA TURNO" in alto per impostare il fondo cassa e abilitare le consegne.'
                               : 'Fascia turno terminata (18:30 - 22:00).'),
                           style: const TextStyle(
                             color: AppTheme.toCompleteYellow,
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (isShiftClosed) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.darkGreenTint,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.moneyGreen),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.verified,
+                          color: AppTheme.moneyGreen, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Turno chiuso alle ${DateFormat('HH:mm').format(shift!.closedAt!)} • Contanti versati: € ${(shift.startingFloat + shift.cashCollected).toStringAsFixed(2)} • POS: € ${shift.cardCollected.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: AppTheme.moneyGreen,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
                           ),
                         ),
                       ),
@@ -585,7 +1101,8 @@ class _RiderScreenState extends State<RiderScreen> {
                     order: order,
                     currentRiderRole: myRoleDb,
                     isUnassignedOverview: false,
-                    hasStartedShift: hasActiveShift,
+                    canClaimDeliveries: canOperateShift,
+                    isShiftClosed: isShiftClosed,
                   ),
                 ),
               ],
@@ -651,7 +1168,8 @@ class _RiderScreenState extends State<RiderScreen> {
                     order: order,
                     currentRiderRole: myRoleDb,
                     isUnassignedOverview: true,
-                    hasStartedShift: hasActiveShift,
+                    canClaimDeliveries: canOperateShift,
+                    isShiftClosed: isShiftClosed,
                   ),
                 ),
 
@@ -672,7 +1190,8 @@ class _RiderScreenState extends State<RiderScreen> {
                     order: order,
                     currentRiderRole: myRoleDb,
                     isUnassignedOverview: false,
-                    hasStartedShift: hasActiveShift,
+                    canClaimDeliveries: canOperateShift,
+                    isShiftClosed: isShiftClosed,
                   ),
                 ),
               ],
@@ -684,17 +1203,55 @@ class _RiderScreenState extends State<RiderScreen> {
   }
 }
 
+class _ReconciliationRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _ReconciliationRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: valueColor ?? AppTheme.textWhite,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RiderDeliveryCard extends StatefulWidget {
   final PizzeriaOrder order;
   final String currentRiderRole;
   final bool isUnassignedOverview;
-  final bool hasStartedShift;
+  final bool canClaimDeliveries;
+  final bool isShiftClosed;
 
   const _RiderDeliveryCard({
     required this.order,
     required this.currentRiderRole,
     required this.isUnassignedOverview,
-    required this.hasStartedShift,
+    required this.canClaimDeliveries,
+    required this.isShiftClosed,
   });
 
   @override
@@ -704,12 +1261,30 @@ class _RiderDeliveryCard extends StatefulWidget {
 class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
   bool _isBusy = false;
 
+  bool _isDrinkItem(OrderLineItem item) {
+    final cat = item.category.toLowerCase();
+    final name = item.name.toLowerCase();
+    return cat.contains('bibit') ||
+        cat.contains('bevand') ||
+        cat.contains('birr') ||
+        name.contains('coca') ||
+        name.contains('fanta') ||
+        name.contains('sprite') ||
+        name.contains('acqua') ||
+        name.contains('birra') ||
+        name.contains('tè') ||
+        name.contains('the ');
+  }
+
   Future<void> _takeInCharge() async {
-    if (!widget.hasStartedShift) {
+    if (!widget.canClaimDeliveries) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-              'Devi prima premere "INIZIA TURNO" (dalle 18:30 alle 22:00).'),
+            widget.isShiftClosed
+                ? 'Il turno di oggi è già stato chiuso.'
+                : 'Devi prima premere "INIZIA TURNO" (dalle 18:30 alle 22:00).',
+          ),
         ),
       );
       return;
@@ -854,7 +1429,9 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
     final isCompleted = order.status == OrderStatus.completato;
     final isOrderReady =
         widget.isUnassignedOverview && order.status == OrderStatus.pronto;
-    final canClaim = isOrderReady && widget.hasStartedShift;
+    final canClaim = isOrderReady && widget.canClaimDeliveries;
+    final totalPieces =
+    order.items.fold<int>(0, (sum, item) => sum + item.quantity);
 
     final borderColor = order.isDelayed
         ? AppTheme.toStartRed
@@ -973,6 +1550,134 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
               ),
             ],
 
+            // Controllo borsa termica: elenco prodotti ordinati
+            if (order.items.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceElevated,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.shopping_bag_outlined,
+                            size: 16, color: AppTheme.toCompleteYellow),
+                        const SizedBox(width: 6),
+                        Text(
+                          'CONTENUTO ORDINE ($totalPieces ${totalPieces == 1 ? 'pezzo' : 'pezzi'})',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: AppTheme.toCompleteYellow,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ...order.items.map((item) {
+                      final isDrink = _isDrinkItem(item);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${item.quantity}x ',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.toCompleteYellow,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    item.name,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDrink
+                                          ? const Color(0xFF4FC3F7)
+                                          : AppTheme.textWhite,
+                                    ),
+                                  ),
+                                ),
+                                if (isDrink)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF4FC3F7)
+                                          .withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                          color: const Color(0xFF4FC3F7)),
+                                    ),
+                                    child: const Text(
+                                      'FRIGO',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        color: Color(0xFF4FC3F7),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            if (item.addedIngredients.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 22),
+                                child: Text(
+                                  '+ ${item.addedIngredients.join(', ')}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.moneyGreen,
+                                  ),
+                                ),
+                              ),
+                            if (item.removedIngredients.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 22),
+                                child: Text(
+                                  '- Senza ${item.removedIngredients.join(', ')}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.toStartRed,
+                                  ),
+                                ),
+                              ),
+                            if (item.notes.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 22),
+                                child: Text(
+                                  'Nota: ${item.notes}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                    color: AppTheme.toCompleteYellow,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+
             if (order.notes.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
@@ -1026,7 +1731,7 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
               ),
             ),
 
-            // Attivo solo se lo stato è PRONTO E il rider ha iniziato il turno
+            // Attivo solo se lo stato è PRONTO E il rider ha un turno aperto
             if (widget.isUnassignedOverview) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -1067,7 +1772,9 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                     canClaim
                         ? 'PRENDI IN CARICO'
                         : (isOrderReady
-                        ? 'INIZIA TURNO PER PRENDERE IN CARICO'
+                        ? (widget.isShiftClosed
+                        ? 'TURNO GIÀ CHIUSO'
+                        : 'INIZIA TURNO PER PRENDERE IN CARICO')
                         : 'NUOVO ORDINE • ATTENDI "PRONTO"'),
                     style: const TextStyle(
                         fontSize: 14, fontWeight: FontWeight.w900),

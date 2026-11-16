@@ -127,6 +127,56 @@ class RiderRates {
   }
 }
 
+class RiderShiftRecord {
+  final String id;
+  final String riderRole;
+  final DateTime shiftDate;
+  final double startingFloat;
+  final DateTime? closedAt;
+  final double cashCollected;
+  final double cardCollected;
+  final double onlinePaid;
+  final int deliveriesCount;
+  final double riderEarnings;
+  final String closingNotes;
+
+  const RiderShiftRecord({
+    required this.id,
+    required this.riderRole,
+    required this.shiftDate,
+    this.startingFloat = 0.0,
+    this.closedAt,
+    this.cashCollected = 0.0,
+    this.cardCollected = 0.0,
+    this.onlinePaid = 0.0,
+    this.deliveriesCount = 0,
+    this.riderEarnings = 0.0,
+    this.closingNotes = '',
+  });
+
+  bool get isClosed => closedAt != null;
+
+  factory RiderShiftRecord.fromJson(Map<String, dynamic> json) {
+    return RiderShiftRecord(
+      id: (json['id'] ?? '').toString(),
+      riderRole: json['rider_role'] as String? ?? '',
+      shiftDate: json['shift_date'] != null
+          ? DateTime.parse(json['shift_date'] as String)
+          : DateTime.now(),
+      startingFloat: (json['starting_float'] as num?)?.toDouble() ?? 0.0,
+      closedAt: json['closed_at'] != null
+          ? DateTime.parse(json['closed_at'] as String).toLocal()
+          : null,
+      cashCollected: (json['cash_collected'] as num?)?.toDouble() ?? 0.0,
+      cardCollected: (json['card_collected'] as num?)?.toDouble() ?? 0.0,
+      onlinePaid: (json['online_paid'] as num?)?.toDouble() ?? 0.0,
+      deliveriesCount: (json['deliveries_count'] as num?)?.toInt() ?? 0,
+      riderEarnings: (json['rider_earnings'] as num?)?.toDouble() ?? 0.0,
+      closingNotes: json['closing_notes'] as String? ?? '',
+    );
+  }
+}
+
 enum OrderSource {
   diretto('diretto', 'Diretto'),
   justEat('just_eat', 'Just Eat'),

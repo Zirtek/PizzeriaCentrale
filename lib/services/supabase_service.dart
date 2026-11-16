@@ -437,25 +437,83 @@ class SupabaseService {
     }).eq('id', id);
   }
 
-  Future<void> registerRiderShift(String riderRole, DateTime date) async {
+  /// Registra l'inizio turno del rider con eventuale fondo cassa iniziale
+  Future<void> registerRiderShift(
+      String riderRole,
+      DateTime date, {
+        double startingFloat = 0.0,
+      }) async {
     final dateStr = DateFormat('yyyy-MM-dd').format(date);
     await _client.from('pizzeria_rider_shifts').upsert(
       {
         'rider_role': riderRole,
         'shift_date': dateStr,
+        'starting_float': startingFloat,
       },
       onConflict: 'rider_role,shift_date',
     );
   }
 
-  Future<bool> hasRiderShiftToday(String riderRole) async {
-    final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final res = await _client
+  /// Aggiorna il fondo cassa durante un turno aperto
+  Future<void> updateRiderStartingFloat(
+      String riderRole,
+      DateTime date,
+      double startingFloat,
+      ) async {
+    final dateStr = DateFormat('yyyy-MM-dd').format(date);
+    await _client
         .from('pizzeria_rider_shifts')
-        .select('id')
+        .update({'starting_float': startingFloat})
         .eq('rider_role', riderRole)
         .eq('shift_date', dateStr);
-    return (res as List).isNotEmpty;
+  }
+
+  /// Registra la chiusura esplicita del turno e il versamento cassa al titolare
+  Future<void> closeRiderShift({
+    required String riderRole,
+    required DateTime date,
+    required double startingFloat,
+    required double cashCollected,
+    required double cardCollected,
+    required double onlinePaid,
+    required int deliveriesCount,
+    required double riderEarnings,
+    String closingNotes = '',
+  }) async {
+    final dateStr = DateFormat('yyyy-MM-dd').format(date);
+    await _client.from('pizzeria_rider_shifts').upsert(
+      {
+        'rider_role': riderRole,
+        'shift_date': dateStr,
+        'starting_float': startingFloat,
+        'closed_at': DateTime.now().toUtc().toIso8601String(),
+        'cash_collected': cashCollected,
+        'card_collected': cardCollected,
+        'online_paid': onlinePaid,
+        'deliveries_count': deliveriesCount,
+        'rider_earnings': riderEarnings,
+        'closing_notes': closingNotes.trim(),
+      },
+      onConflict: 'rider_role,shift_date',
+    );
+  }
+
+  /// Legge il record del turno odierno del rider (incluso fondo cassa e stato chiusura)
+  Future<RiderShiftRecord?> fetchTodayRiderShift(String riderRole) async {
+    final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final row = await _client
+        .from('pizzeria_rider_shifts')
+        .select()
+        .eq('rider_role', riderRole)
+        .eq('shift_date', dateStr)
+        .maybeSingle();
+    if (row == null) return null;
+    return RiderShiftRecord.fromJson(Map<String, dynamic>.from(row));
+  }
+
+  Future<bool> hasRiderShiftToday(String riderRole) async {
+    final shift = await fetchTodayRiderShift(riderRole);
+    return shift != null;
   }
 
   Future<RiderCompensationSummary> calculateRiderCompensation({
