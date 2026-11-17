@@ -28,11 +28,18 @@ class _OwnerAdminScreenState extends State<OwnerAdminScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width < 410;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Area Riservata Titolare'),
+        title: const Text(
+          'Area Riservata Titolare',
+          overflow: TextOverflow.ellipsis,
+        ),
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: isCompact,
+          tabAlignment: isCompact ? TabAlignment.start : TabAlignment.fill,
           indicatorColor: AppTheme.moneyGreen,
           labelColor: AppTheme.moneyGreen,
           unselectedLabelColor: AppTheme.textMuted,
@@ -63,7 +70,7 @@ class _RiderCompensationsTab extends StatefulWidget {
 }
 
 class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
-  String _period = 'oggi'; // 'oggi', 'settimana', 'mese'
+  String _period = 'oggi';
 
   final _weekdayFeeCtrl = TextEditingController(text: '15.00');
   final _saturdayFeeCtrl = TextEditingController(text: '20.00');
@@ -176,9 +183,10 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
   Widget build(BuildContext context) {
     final (from, to) = _dateRange();
     final endOfDay = DateTime(to.year, to.month, to.day, 23, 59, 59);
+    final isCompact = MediaQuery.of(context).size.width < 430;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       children: [
         SegmentedButton<String>(
           segments: const [
@@ -214,7 +222,7 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
             return Card(
               margin: const EdgeInsets.only(bottom: 16),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -230,11 +238,11 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Incassato confermato:'),
+                        const Expanded(child: Text('Incassato confermato:')),
                         Text(
                           '€ ${paidTotal.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 20,
+                            fontSize: 19,
                             fontWeight: FontWeight.w900,
                             color: AppTheme.moneyGreen,
                           ),
@@ -245,11 +253,12 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('In sospeso (non completati):'),
+                        const Expanded(
+                            child: Text('In sospeso (non completati):')),
                         Text(
                           '€ ${pendingTotal.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 17,
+                            fontSize: 16.5,
                             fontWeight: FontWeight.bold,
                             color: AppTheme.toCompleteYellow,
                           ),
@@ -260,7 +269,7 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Ordini completati:'),
+                        const Expanded(child: Text('Ordini completati:')),
                         Text(
                           '$completedCount su ${periodOrders.length}',
                           style: const TextStyle(
@@ -277,11 +286,11 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
           },
         ),
 
-        // Configurazione Tariffe Rider
+        // Configurazione Tariffe Rider responsive
         Card(
           margin: const EdgeInsets.only(bottom: 16),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -290,53 +299,91 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                     Icon(Icons.tune,
                         size: 18, color: AppTheme.toCompleteYellow),
                     SizedBox(width: 8),
-                    Text(
-                      'TARIFFE COMPENSI RIDER',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.toCompleteYellow,
+                    Expanded(
+                      child: Text(
+                        'TARIFFE COMPENSI RIDER',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.toCompleteYellow,
+                        ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _weekdayFeeCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Feriale (€)',
+                if (isCompact) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _weekdayFeeCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Feriale (€)',
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _saturdayFeeCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Sabato (€)',
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _saturdayFeeCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Sabato (€)',
+                          ),
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _bonusFeeCtrl,
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Bonus a consegna (€)',
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _bonusFeeCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'A consegna (€)',
+                  ),
+                ] else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _weekdayFeeCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Feriale (€)',
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _saturdayFeeCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Sabato (€)',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _bonusFeeCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'A consegna (€)',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -399,28 +446,27 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                   return Card(
                     margin: const EdgeInsets.only(bottom: 14),
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
                               Expanded(
-                                child: Row(
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    Flexible(
-                                      child: Text(
-                                        s.riderName,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppTheme.textWhite,
-                                        ),
+                                    Text(
+                                      s.riderName,
+                                      style: const TextStyle(
+                                        fontSize: 19,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.textWhite,
                                       ),
                                     ),
-                                    if (!s.isActive) ...[
-                                      const SizedBox(width: 8),
+                                    if (!s.isActive)
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 8, vertical: 2),
@@ -440,16 +486,19 @@ class _RiderCompensationsTabState extends State<_RiderCompensationsTab> {
                                           ),
                                         ),
                                       ),
-                                    ],
                                   ],
                                 ),
                               ),
-                              Text(
-                                '€ ${s.grandTotal.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 25,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppTheme.moneyGreen,
+                              const SizedBox(width: 8),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  '€ ${s.grandTotal.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 23,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.moneyGreen,
+                                  ),
                                 ),
                               ),
                             ],
@@ -516,11 +565,12 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                 children: [
                   DropdownButtonFormField<String>(
                     value: selectedCategory,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Categoria'),
                     items: _menuCategories
                         .map((c) => DropdownMenuItem(
                       value: c.$1,
-                      child: Text(c.$2),
+                      child: Text(c.$2, overflow: TextOverflow.ellipsis),
                     ))
                         .toList(),
                     onChanged: (v) {
@@ -531,7 +581,7 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                   TextField(
                     controller: nameCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Nome prodotto * (es. Coca Cola lattina)',
+                      labelText: 'Nome prodotto *',
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -618,29 +668,33 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
         builder: (ctx, setDlgState) {
           return AlertDialog(
             title: Text('Modifica: ${item.name}'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: priceCtrl,
-                  keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Prezzo (€)'),
-                ),
-                const SizedBox(height: 10),
-                SwitchListTile(
-                  title: const Text('Prezzo confermato definitivo'),
-                  value: confirmed,
-                  activeColor: AppTheme.moneyGreen,
-                  onChanged: (v) => setDlgState(() => confirmed = v),
-                ),
-                SwitchListTile(
-                  title: const Text('Prodotto disponibile'),
-                  value: available,
-                  activeColor: AppTheme.moneyGreen,
-                  onChanged: (v) => setDlgState(() => available = v),
-                ),
-              ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Prezzo (€)'),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Prezzo confermato definitivo'),
+                    value: confirmed,
+                    activeColor: AppTheme.moneyGreen,
+                    onChanged: (v) => setDlgState(() => confirmed = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Prodotto disponibile'),
+                    value: available,
+                    activeColor: AppTheme.moneyGreen,
+                    onChanged: (v) => setDlgState(() => available = v),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -745,6 +799,8 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                 itemBuilder: (context, index) {
                   final item = items[index];
                   return ListTile(
+                    contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
                     title: Text(
                       item.name,
                       style: TextStyle(
@@ -757,6 +813,7 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                     subtitle: Text(
                       'Categoria: ${item.category}${!item.priceConfirmed ? " • DA CONFERMARE" : ""}',
                       style: TextStyle(
+                        fontSize: 12,
                         color: !item.priceConfirmed
                             ? AppTheme.toCompleteYellow
                             : AppTheme.textMuted,
@@ -765,10 +822,10 @@ class _MenuManagerTabState extends State<_MenuManagerTab> {
                     trailing: Text(
                       item.price != null
                           ? '€ ${item.price!.toStringAsFixed(2)}'
-                          : 'Da confermare',
+                          : 'Da conf.',
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
-                        fontSize: 16,
+                        fontSize: 15,
                         color: item.price != null
                             ? AppTheme.moneyGreen
                             : AppTheme.toCompleteYellow,
@@ -841,27 +898,29 @@ class _PinManagerTabState extends State<_PinManagerTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Aggiungi Nuovo Rider ($nextLabel)'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Nome visualizzato (es. Rider 3 o Marco)',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Nome visualizzato (es. Rider 3 o Marco)',
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: pinCtrl,
-              maxLength: 4,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'PIN iniziale (4 cifre)',
+              const SizedBox(height: 10),
+              TextField(
+                controller: pinCtrl,
+                maxLength: 4,
+                keyboardType: TextInputType.number,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'PIN iniziale (4 cifre)',
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1042,7 +1101,7 @@ class _PinManagerTabState extends State<_PinManagerTab> {
     }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       children: [
         SizedBox(
           width: double.infinity,
@@ -1119,6 +1178,7 @@ class _PinManagerTabState extends State<_PinManagerTab> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       OutlinedButton.icon(
                         onPressed: () => _changePinDialog(profile),

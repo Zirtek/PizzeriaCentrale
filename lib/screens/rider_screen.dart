@@ -154,10 +154,11 @@ class _RiderScreenState extends State<RiderScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       '€ ${cashFromOrders.toStringAsFixed(2)}',
                       style: const TextStyle(
-                        fontSize: 20,
+                        fontSize: 19,
                         fontWeight: FontWeight.w900,
                         color: AppTheme.moneyGreen,
                       ),
@@ -320,6 +321,7 @@ class _RiderScreenState extends State<RiderScreen> {
       appBar: AppBar(
         title: Text(
           widget.session.displayName,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
@@ -445,7 +447,7 @@ class _RiderScreenState extends State<RiderScreen> {
               .fold<double>(0.0, (sum, o) => sum + o.totalAmount);
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
+            padding: const EdgeInsets.fromLTRB(10, 12, 10, 28),
             children: [
               // Banner allerta ordine pronto (in-app)
               if (activeBannerAlerts.isNotEmpty && !isShiftClosed)
@@ -527,7 +529,7 @@ class _RiderScreenState extends State<RiderScreen> {
                                   backgroundColor: AppTheme.moneyGreen,
                                   foregroundColor: Colors.black,
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 8),
+                                      horizontal: 12, vertical: 8),
                                 ),
                                 onPressed: () => _quickClaimFromBanner(o),
                                 child: const Text(
@@ -559,6 +561,7 @@ class _RiderScreenState extends State<RiderScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Column(
@@ -572,12 +575,16 @@ class _RiderScreenState extends State<RiderScreen> {
                                   color: AppTheme.textMuted,
                                 ),
                               ),
-                              Text(
-                                '€ ${todayEarnings.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppTheme.moneyGreen,
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '€ ${todayEarnings.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.moneyGreen,
+                                  ),
                                 ),
                               ),
                               Text(
@@ -602,7 +609,7 @@ class _RiderScreenState extends State<RiderScreen> {
                                 backgroundColor: AppTheme.moneyGreen,
                                 foregroundColor: Colors.black,
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 12),
+                                    horizontal: 12, vertical: 10),
                               ),
                               onPressed: canStartShiftNow ? _startShift : null,
                               child: Text(
@@ -612,13 +619,16 @@ class _RiderScreenState extends State<RiderScreen> {
                                     ? 'DALLE 18:30'
                                     : 'FUORI ORARIO'),
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.w900),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 12,
+                                ),
                               ),
                             )
                           else if (isShiftClosed)
                             Chip(
+                              visualDensity: VisualDensity.compact,
                               avatar: const Icon(Icons.lock_clock,
-                                  color: Colors.black, size: 17),
+                                  color: Colors.black, size: 16),
                               label: Text(
                                 'Chiuso ${DateFormat('HH:mm').format(shift!.closedAt!)}',
                               ),
@@ -626,19 +636,20 @@ class _RiderScreenState extends State<RiderScreen> {
                               labelStyle: const TextStyle(
                                 color: Colors.black,
                                 fontWeight: FontWeight.w900,
-                                fontSize: 12,
+                                fontSize: 11.5,
                               ),
                             )
                           else
                             const Chip(
+                              visualDensity: VisualDensity.compact,
                               avatar: Icon(Icons.check_circle,
-                                  color: Colors.black, size: 17),
+                                  color: Colors.black, size: 16),
                               label: Text('Turno attivo'),
                               backgroundColor: AppTheme.moneyGreen,
                               labelStyle: TextStyle(
                                 color: Colors.black,
                                 fontWeight: FontWeight.w900,
-                                fontSize: 12,
+                                fontSize: 11.5,
                               ),
                             ),
                       ],
@@ -662,6 +673,8 @@ class _RiderScreenState extends State<RiderScreen> {
                               children: [
                                 const Text(
                                   'CONTANTI DA VERSARE',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,
@@ -669,12 +682,16 @@ class _RiderScreenState extends State<RiderScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  '€ ${cashFromOrders.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w900,
-                                    color: AppTheme.moneyGreen,
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    '€ ${cashFromOrders.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppTheme.moneyGreen,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -695,6 +712,8 @@ class _RiderScreenState extends State<RiderScreen> {
                               children: [
                                 const Text(
                                   'CARTA / POS',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,
@@ -702,12 +721,16 @@ class _RiderScreenState extends State<RiderScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  '€ ${cardFromOrders.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w900,
-                                    color: AppTheme.textWhite,
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    '€ ${cardFromOrders.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppTheme.textWhite,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -722,11 +745,13 @@ class _RiderScreenState extends State<RiderScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'Da incassare in consegna:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.toCompleteYellow,
+                          const Expanded(
+                            child: Text(
+                              'Da incassare in consegna:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.toCompleteYellow,
+                              ),
                             ),
                           ),
                           Text(
@@ -764,11 +789,14 @@ class _RiderScreenState extends State<RiderScreen> {
                             riderEarnings: todayEarnings,
                           ),
                           icon: const Icon(Icons.point_of_sale, size: 19),
-                          label: const Text(
-                            'CHIUDI TURNO / VERSA CASSA',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'CHIUDI TURNO / VERSA CASSA',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ),
@@ -809,12 +837,14 @@ class _RiderScreenState extends State<RiderScreen> {
                     const Icon(Icons.delivery_dining,
                         size: 20, color: AppTheme.toCompleteYellow),
                     const SizedBox(width: 6),
-                    Text(
-                      'IN CONSEGNA ORA (${myActiveOrders.length})',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.toCompleteYellow,
+                    Expanded(
+                      child: Text(
+                        'IN CONSEGNA ORA (${myActiveOrders.length})',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.toCompleteYellow,
+                        ),
                       ),
                     ),
                   ],
@@ -841,6 +871,7 @@ class _RiderScreenState extends State<RiderScreen> {
                   Expanded(
                     child: Text(
                       'CONSEGNE DI OGGI (${overviewOrders.length})',
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
@@ -870,7 +901,8 @@ class _RiderScreenState extends State<RiderScreen> {
               const SizedBox(height: 8),
               if (overviewOrders.isEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 22),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
                   decoration: BoxDecoration(
                     color: AppTheme.surfaceDark,
                     borderRadius: BorderRadius.circular(12),
@@ -879,6 +911,7 @@ class _RiderScreenState extends State<RiderScreen> {
                   child: const Center(
                     child: Text(
                       'Nessuna consegna in programma al momento.',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
                         color: AppTheme.textMuted,
@@ -945,10 +978,13 @@ class _ReconciliationRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+            ),
           ),
+          const SizedBox(width: 8),
           Text(
             value,
             style: TextStyle(
@@ -1171,26 +1207,30 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text(
-                  '#${order.orderNumber}  •  $timeStr',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                    color: order.isDelayed
-                        ? AppTheme.toStartRed
-                        : AppTheme.textWhite,
+                Expanded(
+                  child: Text(
+                    '#${order.orderNumber}  •  $timeStr',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: order.isDelayed
+                          ? AppTheme.toStartRed
+                          : AppTheme.textWhite,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Container(
                   padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
                     color: order.status.color,
                     borderRadius: BorderRadius.circular(8),
@@ -1217,9 +1257,13 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
             ),
             const SizedBox(height: 4),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.location_on,
-                    size: 17, color: AppTheme.toCompleteYellow),
+                const Padding(
+                  padding: EdgeInsets.only(top: 1),
+                  child: Icon(Icons.location_on,
+                      size: 17, color: AppTheme.toCompleteYellow),
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -1240,6 +1284,9 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                   if (order.deliveryAddress.isNotEmpty)
                     Expanded(
                       child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
                         onPressed: () {
                           final encoded =
                           Uri.encodeComponent(order.deliveryAddress);
@@ -1250,7 +1297,10 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                           );
                         },
                         icon: const Icon(Icons.map_outlined, size: 18),
-                        label: const Text('NAVIGA'),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('NAVIGA'),
+                        ),
                       ),
                     ),
                   if (order.deliveryAddress.isNotEmpty &&
@@ -1259,6 +1309,9 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                   if (order.customerPhone.isNotEmpty)
                     Expanded(
                       child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
                         onPressed: () {
                           final cleanPhone =
                           order.customerPhone.replaceAll(RegExp(r'\s+'), '');
@@ -1266,7 +1319,10 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                         },
                         icon: const Icon(Icons.phone,
                             size: 18, color: AppTheme.moneyGreen),
-                        label: const Text('CHIAMA'),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('CHIAMA'),
+                        ),
                       ),
                     ),
                 ],
@@ -1475,16 +1531,19 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                         : Icons.schedule),
                     size: 21,
                   ),
-                  label: Text(
-                    canClaim
-                        ? 'PRENDI IN CARICO'
-                        : (isOrderReady
-                        ? (widget.isShiftClosed
-                        ? 'TURNO CHIUSO'
-                        : 'INIZIA TURNO PER PRENDERE')
-                        : 'IN PREPARAZIONE'),
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w900),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      canClaim
+                          ? 'PRENDI IN CARICO'
+                          : (isOrderReady
+                          ? (widget.isShiftClosed
+                          ? 'TURNO CHIUSO'
+                          : 'INIZIA TURNO PER PRENDERE')
+                          : 'IN PREPARAZIONE'),
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ),
               ),
@@ -1493,10 +1552,13 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
               Row(
                 children: [
                   OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
                     onPressed: _isBusy ? null : _releaseDelivery,
                     child: const Text('Rilascia'),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: SizedBox(
                       height: 48,
@@ -1504,12 +1566,16 @@ class _RiderDeliveryCardState extends State<_RiderDeliveryCard> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.completedGreen,
                           foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
                         ),
                         onPressed: _isBusy ? null : _completeDelivery,
-                        icon: const Icon(Icons.check_circle),
-                        label: const Text(
-                          'CONSEGNATO',
-                          style: TextStyle(fontWeight: FontWeight.w900),
+                        icon: const Icon(Icons.check_circle, size: 20),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'CONSEGNATO',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
                         ),
                       ),
                     ),

@@ -86,8 +86,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
       if (isToday) {
         final nowMinutes = now.hour * 60 + now.minute;
-        const startMinutes = 19 * 60; // 19:00
-        const endMinutes = 21 * 60 + 30; // 21:30
+        const startMinutes = 19 * 60;
+        const endMinutes = 21 * 60 + 30;
         if (nowMinutes >= startMinutes && nowMinutes < endMinutes) {
           final nextQuarter = ((nowMinutes ~/ 15) + 1) * 15;
           initialHour = nextQuarter ~/ 60;
@@ -118,9 +118,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
         });
         _updateCustomerMatches();
       }
-    } catch (_) {
-      // Ignora eventuali errori di rete sulla rubrica senza bloccare l'ordine
-    }
+    } catch (_) {}
   }
 
   void _onCustomerFieldChanged() {
@@ -207,12 +205,15 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Rubrica Clienti (${_savedCustomers.length})',
-                          style: const TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textWhite,
+                        Expanded(
+                          child: Text(
+                            'Rubrica Clienti (${_savedCustomers.length})',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textWhite,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -279,12 +280,14 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                 Expanded(
                                   child: Text(
                                     c.name,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: AppTheme.textWhite,
                                     ),
                                   ),
                                 ),
+                                const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 2),
@@ -654,8 +657,11 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                             });
                             Navigator.pop(ctx);
                           },
-                          child: Text(
-                            'AGGIUNGI TEGLIA (€ ${currentPrice.toStringAsFixed(2)})',
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'AGGIUNGI TEGLIA (€ ${currentPrice.toStringAsFixed(2)})',
+                            ),
                           ),
                         ),
                       ),
@@ -962,18 +968,22 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Carrello ($_cartItemsCount articoli)',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textWhite,
+                    Expanded(
+                      child: Text(
+                        'Carrello ($_cartItemsCount articoli)',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textWhite,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       '€ ${_cartTotal.toStringAsFixed(2)}',
                       style: const TextStyle(
-                        fontSize: 21,
+                        fontSize: 20,
                         fontWeight: FontWeight.w900,
                         color: AppTheme.moneyGreen,
                       ),
@@ -1029,6 +1039,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                               ),
                               IconButton(
                                 tooltip: 'Modifica articolo',
+                                constraints: const BoxConstraints(
+                                    minWidth: 36, minHeight: 36),
+                                padding: EdgeInsets.zero,
                                 icon: const Icon(Icons.edit_outlined,
                                     color: AppTheme.toCompleteYellow),
                                 onPressed: () =>
@@ -1036,6 +1049,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                               ),
                               IconButton(
                                 tooltip: 'Rimuovi articolo',
+                                constraints: const BoxConstraints(
+                                    minWidth: 36, minHeight: 36),
+                                padding: EdgeInsets.zero,
                                 icon: const Icon(Icons.delete_outline,
                                     color: AppTheme.toStartRed),
                                 onPressed: () {
@@ -1129,6 +1145,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   Widget build(BuildContext context) {
     final formattedTime = DateFormat('HH:mm').format(_scheduledDateTime);
     final formattedDate = DateFormat('dd/MM').format(_scheduledDateTime);
+    final isCompact = MediaQuery.of(context).size.width < 410;
 
     const categories = [
       ('tutte', 'Tutti'),
@@ -1144,10 +1161,16 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
           _isEditing
               ? 'Modifica Ordine #${widget.existingOrder!.orderNumber}'
               : 'Nuovo Ordine Veloce',
+          overflow: TextOverflow.ellipsis,
         ),
       ),
       bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+        padding: EdgeInsets.fromLTRB(
+          isCompact ? 10 : 14,
+          10,
+          isCompact ? 10 : 14,
+          12,
+        ),
         decoration: const BoxDecoration(
           color: AppTheme.surfaceDark,
           border: Border(top: BorderSide(color: AppTheme.cardBorder, width: 1.5)),
@@ -1160,17 +1183,23 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 onTap: _openCartSheet,
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact ? 9 : 12,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
                     color: AppTheme.backgroundBlack,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppTheme.moneyGreen),
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.shopping_bag_outlined,
-                          color: AppTheme.moneyGreen),
+                      Icon(
+                        Icons.shopping_bag_outlined,
+                        color: AppTheme.moneyGreen,
+                        size: isCompact ? 20 : 24,
+                      ),
                       const SizedBox(width: 6),
                       Column(
                         mainAxisSize: MainAxisSize.min,
@@ -1179,15 +1208,15 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                           Text(
                             '$_cartItemsCount pz • Vedi',
                             style: const TextStyle(
-                              fontSize: 11,
+                              fontSize: 10.5,
                               color: AppTheme.textMuted,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
                             '€ ${_cartTotal.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 18,
+                            style: TextStyle(
+                              fontSize: isCompact ? 16 : 18,
                               fontWeight: FontWeight.w900,
                               color: AppTheme.moneyGreen,
                             ),
@@ -1198,27 +1227,33 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: SizedBox(
-                  height: 54,
+                  height: 52,
                   child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
                     onPressed: _isSaving ? null : _saveOrder,
                     icon: _isSaving
                         ? const SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 18,
+                      height: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
                         color: Colors.black,
                       ),
                     )
-                        : const Icon(Icons.check_circle_outline),
-                    label: Text(
-                      _isSaving
-                          ? 'SALVATAGGIO...'
-                          : (_isEditing ? 'SALVA MODIFICHE' : 'SALVA ORDINE'),
-                      style: const TextStyle(fontSize: 16),
+                        : const Icon(Icons.check_circle_outline, size: 20),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _isSaving
+                            ? 'SALVATAGGIO...'
+                            : (_isEditing ? 'SALVA MODIFICHE' : 'SALVA ORDINE'),
+                        style: const TextStyle(fontSize: 15),
+                      ),
                     ),
                   ),
                 ),
@@ -1249,7 +1284,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
           }).toList();
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+            padding: const EdgeInsets.fromLTRB(12, 14, 12, 24),
             children: [
               // 1. Provenienza e tipo consegna
               const Text(
@@ -1290,7 +1325,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     ButtonSegment(
                       value: DeliveryType.ritiro,
                       icon: Icon(Icons.storefront),
-                      label: Text('Ritiro al banco'),
+                      label: Text('Ritiro'),
                     ),
                   ],
                   selected: {_deliveryType},
@@ -1301,50 +1336,57 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
               const SizedBox(height: 18),
 
-              // 2. Orario (19:00 - 21:30 ogni 15 min) + Dati cliente + Rubrica
-              Row(
+              // 2. Orario + Dati cliente + Rubrica (con Wrap responsive)
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
                 children: [
-                  const Expanded(
-                    child: Text(
-                      '2. ORARIO E CLIENTE',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                        color: AppTheme.toCompleteYellow,
-                      ),
+                  const Text(
+                    '2. ORARIO E CLIENTE',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: AppTheme.toCompleteYellow,
                     ),
                   ),
-                  if (_savedCustomers.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ActionChip(
-                        avatar: const Icon(Icons.contact_phone_outlined,
-                            size: 14, color: AppTheme.moneyGreen),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      if (_savedCustomers.isNotEmpty)
+                        ActionChip(
+                          visualDensity: VisualDensity.compact,
+                          avatar: const Icon(Icons.contact_phone_outlined,
+                              size: 14, color: AppTheme.moneyGreen),
+                          label: Text(
+                            'Rubrica (${_savedCustomers.length})',
+                            style: const TextStyle(
+                              color: AppTheme.moneyGreen,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          backgroundColor: AppTheme.surfaceElevated,
+                          onPressed: _openCustomerDirectorySheet,
+                        ),
+                      ActionChip(
+                        visualDensity: VisualDensity.compact,
+                        avatar: const Icon(Icons.calendar_today,
+                            size: 14, color: AppTheme.toCompleteYellow),
                         label: Text(
-                          'Rubrica (${_savedCustomers.length})',
+                          '$formattedDate • $formattedTime',
                           style: const TextStyle(
-                            color: AppTheme.moneyGreen,
+                            color: AppTheme.textWhite,
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
                         ),
                         backgroundColor: AppTheme.surfaceElevated,
-                        onPressed: _openCustomerDirectorySheet,
+                        onPressed: _pickScheduledDateTime,
                       ),
-                    ),
-                  ActionChip(
-                    avatar: const Icon(Icons.calendar_today,
-                        size: 14, color: AppTheme.toCompleteYellow),
-                    label: Text(
-                      '$formattedDate • $formattedTime',
-                      style: const TextStyle(
-                        color: AppTheme.textWhite,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                    backgroundColor: AppTheme.surfaceElevated,
-                    onPressed: _pickScheduledDateTime,
+                    ],
                   ),
                 ],
               ),
@@ -1367,38 +1409,57 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     labelStyle: TextStyle(
                       color: isSelected ? Colors.black : AppTheme.textWhite,
                       fontWeight: FontWeight.w900,
-                      fontSize: 14,
+                      fontSize: 13.5,
                     ),
                     onSelected: (_) => _selectSlot(hour, minute),
                   );
                 }).toList(),
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: _phoneCtrl,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Telefono',
-                        prefixIcon: Icon(Icons.phone_outlined, size: 19),
+
+              // Telefono e Nome impilati su telefono stretto, affiancati su tablet
+              if (isCompact) ...[
+                TextField(
+                  controller: _phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Telefono',
+                    prefixIcon: Icon(Icons.phone_outlined, size: 19),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _nameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration:
+                  const InputDecoration(labelText: 'Nome cliente *'),
+                ),
+              ] else
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'Telefono',
+                          prefixIcon: Icon(Icons.phone_outlined, size: 19),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: _nameCtrl,
-                      textCapitalization: TextCapitalization.words,
-                      decoration:
-                      const InputDecoration(labelText: 'Nome cliente *'),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: _nameCtrl,
+                        textCapitalization: TextCapitalization.words,
+                        decoration:
+                        const InputDecoration(labelText: 'Nome cliente *'),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
 
               // Suggerimenti istantanei dalla rubrica clienti abituali
               if (_matchingCustomers.isNotEmpty)
@@ -1422,13 +1483,17 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                             Icon(Icons.bolt,
                                 size: 15, color: AppTheme.toCompleteYellow),
                             SizedBox(width: 4),
-                            Text(
-                              'CLIENTI ABITUALI TROVATI (TOCCA PER COMPILARE)',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                color: AppTheme.toCompleteYellow,
-                                letterSpacing: 0.4,
+                            Expanded(
+                              child: Text(
+                                'CLIENTI ABITUALI TROVATI (TOCCA PER COMPILARE)',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.toCompleteYellow,
+                                  letterSpacing: 0.4,
+                                ),
                               ),
                             ),
                           ],
@@ -1467,6 +1532,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                     ],
                                   ),
                                 ),
+                                const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 3),
@@ -1526,7 +1592,10 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                   onPressed:
                   menu.isEmpty ? null : () => _openTegliaBuilder(menu),
                   icon: const Icon(Icons.crop_square_rounded),
-                  label: const Text('COMPONI TEGLIA / MEZZA TEGLIA'),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('COMPONI TEGLIA / MEZZA TEGLIA'),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -1584,6 +1653,8 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
+                    contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                     enabled: isAvailable,
                     onTap:
                     isAvailable ? () => _addMenuItemDialog(item) : null,
@@ -1597,7 +1668,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     subtitle: Text(
                       !isAvailable
                           ? 'Disponibile solo Martedì e Mercoledì'
-                          : '$priceText • Tocca per varianti/note',
+                          : '$priceText • Tocca per varianti',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1613,6 +1684,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                       children: [
                         if (qtyInCart > 0) ...[
                           IconButton(
+                            constraints: const BoxConstraints(
+                                minWidth: 36, minHeight: 36),
+                            padding: EdgeInsets.zero,
                             icon: const Icon(Icons.remove_circle_outline,
                                 color: AppTheme.toStartRed),
                             onPressed: () =>
@@ -1629,8 +1703,11 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                         ],
                         IconButton(
                           tooltip: 'Aggiungi subito 1',
+                          constraints: const BoxConstraints(
+                              minWidth: 38, minHeight: 38),
+                          padding: EdgeInsets.zero,
                           icon: const Icon(Icons.add_circle,
-                              size: 30, color: AppTheme.moneyGreen),
+                              size: 28, color: AppTheme.moneyGreen),
                           onPressed: () => _quickAddItem(item),
                         ),
                       ],
