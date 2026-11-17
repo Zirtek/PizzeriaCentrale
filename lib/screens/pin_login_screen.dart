@@ -120,48 +120,47 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceDark,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: AppTheme.toCompleteYellow, width: 2),
+                  // Logo Pizzeria Centrale
+                  Container(
+                    width: 132,
+                    height: 132,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFEDE2CE),
+                      border: Border.all(
+                        color: AppTheme.toCompleteYellow,
+                        width: 2.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.45),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                        child: const Icon(
-                          Icons.local_fire_department,
-                          size: 34,
-                          color: AppTheme.toStartRed,
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icon/logo.png',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.local_pizza,
+                          size: 54,
+                          color: Color(0xFF3D2414),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'PIZZERIA CENTRALE',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              color: AppTheme.textWhite,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
-                          Text(
-                            'Accesso rapido postazione',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Accesso rapido postazione',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
 
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
