@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
@@ -36,9 +37,13 @@ class ReadyOrderAlertPlatform {
     try {
       await _ensureAndroidAudioContext();
       final wavBytes = _cachedChimeWav ??= _buildDoubleChimeWav();
+      final tempFile = File('${Directory.systemTemp.path}/pizzeria_chime.wav');
+      if (!await tempFile.exists()) {
+        await tempFile.writeAsBytes(wavBytes, flush: true);
+      }
       await _player.stop();
       await _player.play(
-        BytesSource(wavBytes, mimeType: 'audio/wav'),
+        DeviceFileSource(tempFile.path),
         volume: 1.0,
       );
     } catch (_) {
